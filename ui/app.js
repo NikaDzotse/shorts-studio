@@ -18,8 +18,14 @@
   const mmss = (s) => { s = Math.round(s || 0); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
   const ago = (iso) => { const d = (Date.now() - Date.parse(iso)) / 1000; return d < 3600 ? Math.max(1, Math.round(d / 60)) + " min ago" : d < 86400 ? Math.round(d / 3600) + " h ago" : Math.round(d / 86400) + " days ago"; };
   const S = window.studio;
-  let settings = null, themes = [], clips = [], shorts = [], range = "week";
+  let settings = null, themes = [], clips = [], shorts = [], presets = [], range = "week";
   const picked = new Set();
+  function renderPresets() {
+    const select = $("#batch-preset");
+    select.replaceChildren(el("option", { value: "", text: "Use Settings" }), ...presets.map((p) => el("option", { value: p.id, text: p.name })));
+    select.value = presets.some((p) => p.id === settings.presetId) ? settings.presetId : "";
+    $("#preset-hint").textContent = presets.length ? "Applies to selected clips, pasted links, and Best of the week." : "Save a look in Edit → Look → Presets.";
+  }
 
   function applyAccent() {
     const th = themes.find((t) => t.id === settings.theme) || themes[0];
@@ -50,7 +56,7 @@
     $("#make-selected").textContent = n ? `Make ${n} Short${n > 1 ? "s" : ""}` : "Pick clips to make Shorts";
   }
   async function make(links) {
-    const ids = await tryIt(S.make(links), "Make");
+    const ids = await tryIt(S.make(links, $("#batch-preset").value), "Make");
     toast(`Making ${ids.length} Short${ids.length > 1 ? "s" : ""}. They appear on the right as they're done.`);
     picked.clear(); renderClips();
   }
@@ -196,16 +202,18 @@
 
   // ---------- wiring ----------
   async function start() {
-    [settings, themes, shorts] = await Promise.all([S.settings(), S.themes(), S.shorts()]);
-    applyAccent(); renderShorts();
+    [settings, themes, shorts, presets] = await Promise.all([S.settings(), S.themes(), S.shorts(), S.presets()]);
+    applyAccent(); renderShorts(); renderPresets();
+    S.onPresets((items) => { presets = items; renderPresets(); });
+    $("#batch-preset").addEventListener("change", () => S.saveSettings({ presetId: $("#batch-preset").value }).catch((e) => toast(e.message, true)));
     if (settings.firstRun || !settings.channel) welcome(); else loadClips();
     S.onShorts(async () => { shorts = await S.shorts(); renderShorts(); if (clips.length) renderClips(); });
-    S.onSettings((s) => { const ch = s.channel !== settings.channel; settings = s; applyAccent(); if (ch) loadClips(); });
+    S.onSettings((s) => { const ch = s.channel !== settings.channel; settings = s; applyAccent(); renderPresets(); if (ch) loadClips(); });
     for (const b of document.querySelectorAll("#range button")) b.addEventListener("click", () => { range = b.dataset.r; for (const x of document.querySelectorAll("#range button")) x.classList.toggle("on", x === b); picked.clear(); loadClips(); });
     $("#reload").addEventListener("click", loadClips);
-    $("#make-selected").addEventListener("click", () => make([...picked]));
-    $("#make-links").addEventListener("click", () => { const l = $("#links").value.split(/\s+/).filter(Boolean); if (!l.length) return toast("Paste some clip links first", true); make(l).then(() => ($("#links").value = "")); });
-    $("#best-of").addEventListener("click", () => { if (!settings.channel) return toast("Set your channel first", true); S.bestOf(settings.channel).then(() => toast("Making this week's best-of")); });
+    $("#make-selected").addEventListener("click", () => make([...picked]).catch(() => {}));
+    $("#make-links").addEventListener("click", () => { const l = $("#links").value.split(/\s+/).filter(Boolean); if (!l.length) return toast("Paste some clip links first", true); make(l).then(() => ($("#links").value = "")).catch(() => {}); });
+    $("#best-of").addEventListener("click", () => { if (!settings.channel) return toast("Set your channel first", true); S.bestOf(settings.channel, $("#batch-preset").value).then(() => toast("Making this week's best-of")).catch((e) => toast(e.message, true)); });
     $("#open-settings").addEventListener("click", openSettings);
     $("#channel-chip").addEventListener("click", openSettings);
     $("#open-videos").addEventListener("click", () => S.openFolder("videos"));

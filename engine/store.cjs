@@ -17,6 +17,7 @@ const DEFAULTS = {
   handle: "",                     // the channel line on the bottom card (empty = twitch.tv/<channel>)
   stamp: "",                      // the stamp on the bottom card (empty = the theme's)
   layout: "letterbox",            // for new Shorts: letterbox (whole picture) / split / stage / center
+  presetId: "",                   // empty uses Settings; otherwise a saved look for new batches
   crops: {},                      // your own default crops per layout (saved from the editor)
   captions: true, chat: true,
   model: "base",                  // speech model: base (fast, 148 MB) or small (better, 466 MB)

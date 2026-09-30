@@ -20,7 +20,7 @@ Left to right:
 
 ## Install (Windows 10 or 11, 64-bit)
 
-1. Download `Shorts-Studio-Setup-0.1.0.exe` from [Releases](https://github.com/NikaDzotse/shorts-studio/releases/latest)
+1. Download `Shorts-Studio-Setup-<version>.exe` from [Releases](https://github.com/NikaDzotse/shorts-studio/releases/latest)
    and run it.
 2. Windows will probably show **"Windows protected your PC"**. The app isn't code-signed (a certificate costs money
    every year), so Windows doesn't know it yet. Click **More info**, then **Run anyway**.
@@ -54,7 +54,17 @@ Captions come from what's said in the clip.
 
 Press **✎ Edit** on a Short. The editor window has:
 
-- **Timeline:** drag across the sound to keep or cut parts. Split, delete, and smart trim.
+- **Timeline:** drag across the sound to keep or cut parts. Split, delete, and smart trim. Edges snap to where words
+  start and end and to the playhead; hold **Alt** to place them freely.
+- **Cuts:** every part that's cut out, and the ones you put back.
+  - **Cut by words:** the clip's words as text. Select words (click, drag, or Shift+click) and press **Delete** to cut
+    them out; **Put them back** undoes it.
+  - Each cut has **Remove cut** / **Cut again**, exact **from / to** times you can type, and **▶ Check**, which plays
+    across the cut the way the Short will.
+  - On the timeline, a cut is a ✂ chip on the Video track: select it and press **Delete** (or double-click it) to put
+    that part back. A part you put back keeps a dashed line under it; double-click the line to cut it again.
+- **Keys for cutting:** **I** marks where a part starts and **O** where it ends (at the playhead). **X** cuts that part
+  out, **Enter** keeps it, and **Esc** clears the marks. **S** splits at the playhead.
 - **Look:** layout (camera + game, 4:3, whole picture, you centred), and drag the boxes to choose what's shown.
   "Use these crops for my next Shorts" remembers where your camera and game are.
 - **Title:** the title card and the bottom card, including their words, position and when they show.
@@ -67,12 +77,33 @@ Press **✎ Edit** on a Short. The editor window has:
 - **Post:** the title, YouTube description and TikTok caption.
 - **Join:** put other Shorts after this one.
 
-Press **Save & rebuild** when you're done, then **▶ Watch result**.
+Press **Save & rebuild** when you're done, then **▶ Watch result**. If the editor closes before you save (a crash,
+or Windows restarting), reopening the Short offers to restore your unsaved changes.
 
 ![The Sound tab: volume, bleeps, music that dips under your voice, and sound effects](docs/editor-sound.png)
 
 Your own sounds, music and pictures go in the folders the Sound tab opens. Press **↻ Refresh library** after
 adding files.
+
+## Your editing presets
+
+1. Edit a Short until its look is how you want it.
+2. Open **Look → Presets**, enter a name such as **Gaming**, **Just Chatting**, or **Funny reactions**, and press
+   **Save as new**. Saving a preset does not render a video.
+3. In the main window, choose the **Editing preset** above **Your clips**, select clips, and press **Make Shorts**.
+   The same selection applies to pasted links and **Best of the week**. Choose **Use Settings** for the ordinary defaults.
+
+Presets include the layout and camera/game crops, theme and accent, caption style and position, title-card placement,
+branding lines, caption/chat toggles, volume, and background music with its volume and ducking setting. Music covers
+the new Short from its beginning, using the saved starting point within the track.
+
+Each clip keeps its own title, transcript, dates, credits, cuts and timed effects. To restyle an existing Short,
+choose a preset in **Edit → Look → Presets** and press **Apply**; **Undo** restores its previous look.
+Press **Save & rebuild** to export the change.
+
+To change a saved preset or its name, select it, edit the name/look, and press **Update preset**. **Delete** removes
+the preset without changing finished or queued Shorts. Presets are saved in `%APPDATA%\Shorts Studio\presets.json`.
+Music files stay in your library; if one is moved or deleted, choose a replacement and update the preset.
 
 ## Uploading
 
@@ -126,6 +157,9 @@ npm run dist             # dist\Shorts-Studio-Setup-<version>.exe
     `dist\win-unpacked`.
 
 Code layout:
+
+The offline preset integration test is `node node_modules/electron/cli.js scripts/test-presets.cjs`. It uses generated
+clips, real windows and FFmpeg exports in a temporary data folder, and saves screenshots there.
 
 - `main.cjs`: the app.
 - `preload.cjs`: the `window.studio` bridge.

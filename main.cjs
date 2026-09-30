@@ -9,17 +9,23 @@ const path = require("path");
 if (process.env.SHORTS_STUDIO_DATA) app.setPath("userData", process.env.SHORTS_STUDIO_DATA);
 const HIDDEN = !!process.env.SHORTS_STUDIO_HIDDEN;
 if (!app.requestSingleInstanceLock()) { app.quit(); } else {
-  app.on("second-instance", () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+  // opening the app again brings up the main window (never the hidden one that draws cards and notes)
+  app.on("second-instance", () => { if (!main) return createMain(); if (main.isMinimized()) main.restore(); main.show(); main.focus(); });
 }
 
 const P = require("./engine/paths.cjs");
 const S = require("./engine/store.cjs");
+const Presets = require("./engine/presets.cjs");
 const M = require("./engine/make.cjs");
 const T = require("./engine/twitch.cjs");
 const Wh = require("./engine/whisper.cjs");
 const LIB = require("./engine/library.cjs");
 const OBS = require("./engine/obs.cjs");
 const { log, LOG } = require("./engine/run.cjs");
+
+// a Short that was being made when the app last closed (or crashed) will never finish by itself
+for (const s of S.list()) if (s.status === "making" || s.status === "queued")
+  S.update(s.id, { status: "failed", step: "", error: "Shorts Studio closed before this was finished. Press ↻ Remake." });
 
 let main = null;
 const editors = new Map();
@@ -31,7 +37,12 @@ function createMain() {
   main = new BrowserWindow({ width: 1320, height: 880, minWidth: 900, minHeight: 620, backgroundColor: "#0d0e11", title: "Shorts Studio", icon: fs.existsSync(ICON) ? ICON : undefined, webPreferences, show: false });
   main.once("ready-to-show", () => reveal(main));
   main.loadFile(path.join(__dirname, "ui", "index.html"));
-  main.on("closed", () => { main = null; for (const w of editors.values()) if (!w.isDestroyed()) w.close(); });
+  main.on("close", (e) => {
+    if (!M.busy() || app.__asked) return;
+    const r = dialog.showMessageBoxSync(main, { type: "question", buttons: ["Quit anyway", "Keep working"], defaultId: 1, cancelId: 1, message: "A Short is still being made", detail: "Quitting stops it. You can make it again later." });
+    if (r === 1) e.preventDefault(); else app.__asked = true;
+  });
+  main.on("closed", () => { main = null; for (const w of editors.values()) if (!w.isDestroyed()) w.close(); quitIfNothingOpen(); });
   guard(main);
 }
 function openEditor(id) {
@@ -42,15 +53,24 @@ function openEditor(id) {
     title: "Edit", icon: fs.existsSync(ICON) ? ICON : undefined, webPreferences, show: false });
   w.once("ready-to-show", () => reveal(w));
   w.loadFile(path.join(__dirname, "ui", "editor.html"), { query: { id } });
-  w.on("closed", () => editors.delete(id));
+  w.on("closed", () => { editors.delete(id); quitIfNothingOpen(); });
   // the editor says "not yet" while it has unsaved changes; Electron shows nothing by itself, so ask here
   w.webContents.on("will-prevent-unload", (e) => {
     const r = dialog.showMessageBoxSync(w, { type: "question", buttons: ["Close without saving", "Keep editing"], defaultId: 1, cancelId: 1, message: "You have changes that aren't saved", detail: "Save & rebuild keeps them." });
-    if (r === 0) e.preventDefault();
+    if (r === 0) { dropDraft(id); e.preventDefault(); }   // closing without saving: nothing to offer next time
   });
   editors.set(id, w);
   guard(w);
 }
+// The app ends when its own windows are gone. The hidden window that draws cards and notes doesn't count, so
+// Electron's "window-all-closed" would never come and the app would stay running with nothing on screen.
+function quitIfNothingOpen() {
+  if (main && !main.isDestroyed()) return;
+  for (const w of editors.values()) if (!w.isDestroyed()) return;
+  app.quit();
+}
+const draftFile = (id) => path.join(P.DATA, "drafts", String(id).replace(/[^A-Za-z0-9_-]/g, "_") + ".json");
+function dropDraft(id) { try { fs.unlinkSync(draftFile(id)); } catch (e) { /* there was none */ } }
 // tests: shown (so it paints) but off the screen, see-through, click-through and not on the taskbar
 function reveal(w) {
   if (!HIDDEN) return w.show();
@@ -71,20 +91,29 @@ const handle = (name, fn) => ipcMain.handle("studio:" + name, async (e, ...args)
 });
 handle("settings", () => S.settings());
 handle("saveSettings", (patch) => S.saveSettings(patch || {}));
+handle("presets", () => Presets.list());
+handle("presetStyle", (id) => Presets.resolve(id));
+handle("savePreset", (data) => { const p = Presets.save(data); send("studio:presets", Presets.list()); return p; });
+handle("deletePreset", (id) => { Presets.remove(id); if (S.settings().presetId === id) S.saveSettings({ presetId: "" }); send("studio:presets", Presets.list()); return true; });
 handle("themes", () => fs.readdirSync(P.THEMES).filter((d) => fs.existsSync(path.join(P.THEMES, d, "theme.json")))
   .map((id) => ({ id, ...JSON.parse(fs.readFileSync(path.join(P.THEMES, id, "theme.json"), "utf8")), frame: path.join(P.THEMES, id, "frame.html") })));
 handle("clips", (channel, range) => T.channelClips(channel, range));
-handle("make", (links) => {
+handle("make", (links, presetId = S.settings().presetId) => {
+  const style = Presets.resolve(presetId);
   const ids = [];
-  for (const l of links || []) { const slug = T.slugFrom(l); if (!slug) continue; ids.push("c-" + slug.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60)); M.makeShort(slug).catch(() => {}); }
+  for (const l of links || []) { const slug = T.slugFrom(l); if (!slug) continue; ids.push("c-" + slug.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60)); M.makeShort(slug, style).catch(() => {}); }
   if (!ids.length) throw new Error("No Twitch clip links in there");
   return ids;
 });
-handle("bestOf", (channel) => { M.bestOf(channel || S.settings().channel).catch(() => {}); return true; });
+handle("bestOf", (channel, presetId = S.settings().presetId) => { const style = Presets.resolve(presetId); M.bestOf(channel || S.settings().channel, { style }).catch(() => {}); return true; });
 handle("shorts", () => S.list());
 handle("editData", (id) => ({ item: S.get(id), data: M.editData(id) }));
-handle("saveEdit", (id, edits) => { S.saveEdits(id, edits); M.editShort(id).catch(() => {}); return true; });
-handle("remake", (id) => { const s = S.get(id); if (!s) throw new Error("No such Short"); if (s.kind === "week") M.bestOf(s.channel).catch(() => {}); else M.makeShort(s.slug).catch(() => {}); return true; });
+handle("saveEdit", (id, edits) => { S.saveEdits(id, edits); dropDraft(id); M.editShort(id).catch(() => {}); return true; });
+// an editor's unsaved changes, kept while you work so a crash doesn't lose them
+handle("draft", (id) => { try { return JSON.parse(fs.readFileSync(draftFile(id), "utf8")); } catch (e) { return null; } });
+handle("saveDraft", (id, state) => { fs.mkdirSync(path.dirname(draftFile(id)), { recursive: true }); fs.writeFileSync(draftFile(id), JSON.stringify({ at: Date.now(), E: String(state) })); return true; });
+handle("dropDraft", (id) => { dropDraft(id); return true; });
+handle("remake", (id) => { const s = S.get(id); if (!s) throw new Error("No such Short"); if (s.kind === "week") M.bestOf(s.channel, { style: s.presetStyle || {} }).catch(() => {}); else M.makeShort(s.slug, s.presetStyle || {}).catch(() => {}); return true; });
 handle("remove", async (id) => {
   const s = S.get(id);
   // into the Recycle Bin, never deleted for good

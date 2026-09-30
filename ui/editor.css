@@ -122,6 +122,10 @@ nav#itabs em { font-style: normal; margin-left: 5px; color: var(--faint); font-s
 .seg button { flex: 1; font-size: 12px; padding: 6px 6px; }
 .seg button.on { border-color: var(--red); background: rgba(239,68,59,.16); color: #fff; }
 .layouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.presets { display: flex; flex-direction: column; gap: 8px; }
+.presets .row { flex-wrap: wrap; }
+.presets select { flex: 1; min-width: 130px; width: auto; }
+.presets input { width: 100%; min-width: 0; }
 .layouts button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 4px; font-size: 11px; }
 .layouts button.on { border-color: var(--red); background: rgba(239,68,59,.16); color: #fff; }
 .layouts i { display: block; width: 22px; height: 38px; border: 2px solid currentColor; border-radius: 3px; position: relative; opacity: .8; }
@@ -219,3 +223,15 @@ select { max-width: 100%; }
 @keyframes cap-punch { from { transform: scale(1.22); } to { transform: scale(1); } }
 .cap.box { -webkit-text-stroke: 0; text-shadow: none; }
 .cap.box .inner { background: rgba(13,14,17,.81); padding: 4px 14px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.cutrow.back { border-style: dashed; }
+.cutrow .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cutrow .mono { font: 12px var(--type); }
+#tl-bar .tsep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+.wtext { line-height: 2; font-size: 14px; user-select: none; max-height: 240px; overflow-y: auto; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.wtok { padding: 2px 3px; border-radius: 4px; cursor: pointer; }
+.wtok:hover { background: rgba(255,255,255,.08); }
+.wtok.out { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(239,68,59,.85); }
+.wtok.picked { background: rgba(106,168,255,.35); color: #fff; }
+.cutrow .row.times { gap: 6px; }
+#draftbar { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--panel2); border: 1px solid var(--amber); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.5); font-size: 13px; }

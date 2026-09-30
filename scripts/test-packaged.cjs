@@ -77,6 +77,12 @@ function connect(t) {
       ed.close();
     } else code = 1;
     if (main.errors.length) console.log("MAIN ERRORS:\n  " + main.errors.join("\n  "));
+    // closing the main window must end the app (the hidden window that drew the cards is still there)
+    const gone = new Promise((r) => child.once("exit", () => r(true)));
+    main.eval("setTimeout(() => window.close(), 50), 1").catch(() => {});
+    const quit = await Promise.race([gone, sleep(10000).then(() => false)]);
+    console.log(quit ? "QUIT OK: the app ended when its window closed" : "STILL RUNNING 10 s after the window closed");
+    if (!quit) code = 1;
     main.close();
   } catch (e) { console.error("TEST FAILED", e.stack || e.message); code = 1; }
   child.kill();

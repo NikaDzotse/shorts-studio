@@ -33,10 +33,11 @@
   const typing = (t) => t && (t.tagName === "INPUT" && !["checkbox", "range", "color", "button"].includes(t.type) || t.tagName === "TEXTAREA" || t.tagName === "SELECT");
 
   // ---------- loading (from the app) ----------
-  let D = null, X = null, E = null, ws = null, SETTINGS = {};
+  let D = null, X = null, E = null, ws = null, SETTINGS = {}, THEMES = [], PRESETS = [], presetId = "", presetName = "";
   async function start() {
     wireStatic();
-    const [got, list, lib, st] = await Promise.all([studio.editData(ID), studio.shorts(), studio.library(), studio.settings()]);
+    const [got, list, lib, st, themes, presets] = await Promise.all([studio.editData(ID), studio.shorts(), studio.library(), studio.settings(), studio.themes(), studio.presets()]);
+    THEMES = themes; PRESETS = presets;
     window.SHORTS = list; window.LIBRARY = lib; SETTINGS = st;
     X = got.item;
     if (!X) return blocked("This Short isn't there any more.");
@@ -56,12 +57,18 @@
     v.addEventListener("seeked", () => (needDraw = true));
     refresh();
     requestAnimationFrame(loop);
+    offerDraft();
     studio.onShorts(async (it) => {
       if (!it) return;
       window.SHORTS = await studio.shorts();
       if (it.id === ID) { X = { ...X, ...it }; if (waiting) { if (it.status === "making" || it.status === "queued") waiting.progress("Rebuilding: " + (it.step || "...")); else { const w = waiting; waiting = null; w.done(it); } } renderHead(); }
     });
     studio.onSettings((x) => { SETTINGS = x; });
+    studio.onPresets((items) => {
+      PRESETS = items;
+      if (presetId && !items.some((p) => p.id === presetId)) { presetId = ""; presetName = ""; }
+      if (tab === "look") renderPane();
+    });
   }
   function blocked(text, ...extra) {
     $("#ed").replaceChildren(el("div", { class: "blocker" }, el("p", { text }), ...extra));
@@ -90,11 +97,12 @@
     // the effects come back as they were saved
     const ed = D.edits || {}, list = (k) => Array.isArray(ed[k]) ? clone(ed[k]) : [];
     const join = ed.join && Array.isArray(ed.join.ids) ? { ids: [...ed.join.ids], slam: ed.join.slam !== false, oneTitle: ed.join.oneTitle !== false } : { ids: [], slam: true, oneTitle: true };
-    return { layout: D.layout, title: D.title || "", frame, upload, volume: +D.volume || 0,
+    return { appearance: { theme: D.theme || SETTINGS.theme, accent: D.accent }, layout: D.layout, title: D.title || "", frame, upload, volume: +D.volume || 0,
       segs: clone(D.segs), geoBy, cropsBy, cap: { style: "classic", ...clone(D.cap) }, captions: D.captions !== false, words: clone(D.words),
       chatOn: D.chatOn !== false, notes: clone(D.notes), noteWidth: D.noteWidth, texts: (D.texts || []).map(normText),
       speeds: list("speeds"), freezes: list("freezes"), zooms: list("zooms"), sfx: list("sfx"), stickers: list("stickers"),
-      music: ed.music && ed.music.file ? clone(ed.music) : null, join };
+      music: ed.music && ed.music.file ? clone(ed.music) : null, join,
+      cutsKnown: remember(remember(gaps(D.autoSegs || []), Array.isArray(ed.cutsKnown) ? ed.cutsKnown : []), gaps(D.segs || [])) };
   }
   // the frame as make-short.cjs draws it when nothing was changed (edit.js from before 2026-09-30 lacks some of these)
   function frameDefaults() {
@@ -106,14 +114,15 @@
   const normText = (x) => ({ text: String(x.text || ""), t: +x.t || 0, e: +x.e || (+x.t || 0) + 2, y: Math.round(+x.y || 900), size: Math.round(+x.size || 80), color: x.color || "#ffffff", box: !!x.box });
   function toEdits() {
     const l = E.layout;
-    return { v: 2, title: E.title.trim(), layout: l, segs: segsN().map(([a, b]) => [r2(a), r2(b)]), geo: E.geoBy[l], crops: E.cropsBy[l], frame: E.frame,
+    return { v: 2, appearance: E.appearance, title: E.title.trim(), layout: l, segs: segsN().map(([a, b]) => [r2(a), r2(b)]), geo: E.geoBy[l], crops: E.cropsBy[l], frame: E.frame,
       volume: E.volume, upload: { title: E.upload.title.trim(), description: E.upload.description, tiktok: E.upload.tiktok.trim() },
       captions: E.captions, cap: E.cap, words: E.words.map((w) => ({ w: w.w, s: r2(w.s), e: r2(w.e), ...(w.color ? { color: w.color } : {}), ...(w.bleep ? { bleep: true } : {}), ...(w.emoji ? { emoji: w.emoji } : {}) })),
       chat: E.chatOn, notes: E.notes.map((n) => ({ key: n.key, t: r2(n.t), x: Math.round(n.x), y: Math.round(n.y), hold: r2(n.hold), ...(n.text && n.text.trim() ? { text: n.text.trim() } : {}) })),
       noteWidth: Math.round(E.noteWidth), texts: E.texts.map((x) => ({ ...x, t: r2(x.t), e: r2(x.e) })),
       speeds: E.speeds.map((s) => ({ a: r2(s.a), b: r2(s.b), speed: s.speed })), freezes: E.freezes.map((f) => ({ t: r2(f.t), d: r2(f.d) })),
       zooms: E.zooms.map((z) => ({ ...z, t: r2(z.t), e: r2(z.e) })), sfx: E.sfx.map((x) => ({ ...x, t: r2(x.t) })), music: E.music,
-      stickers: E.stickers.map((x) => ({ ...x, t: r2(x.t), e: r2(x.e) })), join: E.join };
+      stickers: E.stickers.map((x) => ({ ...x, t: r2(x.t), e: r2(x.e) })), join: E.join,
+      cutsKnown: remember(E.cutsKnown, gaps(segsN())).map(([a, b]) => [r2(a), r2(b)]) };
   }
   const dur = () => D.clipSeconds;
   const geo = () => E.geoBy[E.layout];
@@ -123,19 +132,46 @@
 
   // history: every change is one step back (a slider or a drag is one step, not hundreds)
   let hist = [], fut = [], saved = "", mergeKey = "", mergeAt = 0, ver = 0, busy = false, status = { kind: "", text: "" };
-  function change(fn, { merge = "", insp = true, lanes = true, except = "" } = {}) {
-    const before = JSON.stringify(E);
+  function change(fn, { merge = "", insp = true, lanes = true, except = "", track = true } = {}) {
+    const before = JSON.stringify(E), segsBefore = JSON.stringify(E.segs), cutsBefore = gaps(segsN());
     fn(E);
+    // a part that was cut and is back in the Short stays under Cuts, so it can be cut again
+    if (track && JSON.stringify(E.segs) !== segsBefore) E.cutsKnown = remember(E.cutsKnown || [], cutsBefore);
     if (JSON.stringify(E) === before) return false;
     const now = Date.now();
     if (!(merge && merge === mergeKey && now - mergeAt < 1500)) { hist.push(before); if (hist.length > 300) hist.shift(); }
     mergeKey = merge; mergeAt = now; fut = [];
-    ver++; refresh({ insp, lanes, except });
+    ver++; refresh({ insp, lanes, except }); keepDraft();
     return true;
   }
-  function undo() { if (!hist.length) return; fut.push(JSON.stringify(E)); E = JSON.parse(hist.pop()); mergeKey = ""; ver++; refresh(); }
-  function redo() { if (!fut.length) return; hist.push(JSON.stringify(E)); E = JSON.parse(fut.pop()); mergeKey = ""; ver++; refresh(); }
+  function undo() { if (!hist.length) return; fut.push(JSON.stringify(E)); E = JSON.parse(hist.pop()); mergeKey = ""; ver++; refresh(); keepDraft(); }
+  function redo() { if (!fut.length) return; hist.push(JSON.stringify(E)); E = JSON.parse(fut.pop()); mergeKey = ""; ver++; refresh(); keepDraft(); }
+  // ---------- drafts: unsaved changes survive a crash or a killed app (the app keeps them in its data folder; saving,
+  // or closing without saving, throws them away) ----------
+  let draftTimer = 0;
+  function keepDraft() {
+    if (DRY) return;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => { if (!E) return; const now = JSON.stringify(E); (now === saved ? studio.dropDraft(ID) : studio.saveDraft(ID, now)).catch(() => {}); }, 800);
+  }
+  function dropDraft() { clearTimeout(draftTimer); if (!DRY) studio.dropDraft(ID).catch(() => {}); }
+  async function offerDraft() {
+    if (DRY) return;
+    const d = await studio.draft(ID).catch(() => null);
+    if (!d || !d.E || d.E === saved) return;
+    if (X.updatedAt && d.at < Date.parse(X.updatedAt)) return dropDraft();   // the Short was rebuilt since: the draft is out of date
+    const when = new Date(d.at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const bar = el("div", { id: "draftbar" },
+      el("span", { text: `Changes from ${when} weren't saved (the editor closed before Save & rebuild).` }),
+      el("button", { class: "primary", id: "draft-restore", text: "Restore them", onclick: () => {
+        bar.remove(); hist.push(JSON.stringify(E)); E = JSON.parse(d.E); mergeKey = ""; ver++; refresh(); keepDraft();
+        toast("Unsaved changes restored. Save & rebuild keeps them.");
+      } }),
+      el("button", { id: "draft-discard", text: "Discard", onclick: () => { bar.remove(); dropDraft(); } }));
+    document.body.append(bar);
+  }
   function refresh({ insp = true, lanes = true, except = "" } = {}) {
+    document.documentElement.style.setProperty("--red", E.appearance.accent || "#ef443b");
     if (lanes) syncLanes(except); else renderTrackLabels();
     renderBoxes(); layoutPreview(); frameSrc(); overlayKey = ""; needDraw = true;
     $("#video").volume = Math.min(1, Math.pow(10, (E.volume || 0) / 20));   // the preview can only play it quieter
@@ -196,6 +232,101 @@
   const libEntry = (file) => { const L = window.LIBRARY || {}; return [...(L.sfx || []), ...(L.music || [])].find((x) => x.file === file); };
   const previewGain = (file, target, vol) => { const x = libEntry(file); const g = x ? clamp(Math.min(target - x.lufs, -1 - x.peak), -30, 12) : 0; return clamp(Math.pow(10, (g + (+vol || 0)) / 20), 0, 1); };
   const gaps = (segs) => { const out = []; let at = 0; for (const [a, b] of segs) { if (a - at > 0.01) out.push([at, a]); at = b; } if (dur() - at > 0.01) out.push([at, dur()]); return out; };
+  // ---------- cuts: every part that was ever cut stays listed, so it can be put back and cut again ----------
+  const overlaps = ([a, b], [c, d]) => Math.min(b, d) - Math.max(a, c) > 0.05;
+  function mergeCuts(list) {
+    const s = list.map(([a, b]) => [clamp(+a, 0, dur()), clamp(+b, 0, dur())]).filter(([a, b]) => b - a >= 0.1).sort((x, y) => x[0] - y[0]);
+    const out = [];
+    for (const [a, b] of s) { const l = out[out.length - 1]; if (l && a < l[1] - 0.05) l[1] = Math.max(l[1], b); else out.push([a, b]); }
+    return out;
+  }
+  // adds cuts to the list; a newer version of a cut (made shorter or longer on the timeline) replaces the old one
+  const remember = (known, newer) => mergeCuts([...mergeCuts(known).filter((k) => !newer.some((n) => overlaps(k, n))), ...newer]);
+  // the cuts now (the gaps between kept parts) and the ones put back, in time order
+  function cutList() {
+    const now = gaps(segsN()).filter(([a, b]) => b - a >= 0.1).map(([a, b]) => ({ a, b, on: true }));
+    const back = (E.cutsKnown || []).filter((k) => !now.some((c) => overlaps([c.a, c.b], k))).map(([a, b]) => ({ a, b, on: false }));
+    return [...now, ...back].sort((x, y) => x.a - y.a);
+  }
+  // parts that touch where a cut was removed become one part again (a split made on purpose stays split)
+  const joinAt = (segs, pts) => { const out = []; for (const [x, y] of segs) { const l = out[out.length - 1]; if (l && Math.abs(x - l[1]) < 0.002 && pts.some((p) => Math.abs(p - x) < 0.002)) l[1] = Math.max(l[1], y); else out.push([x, y]); } return out; };
+  function uncut(a, b) { sel = null; change((E) => { E.segs = joinAt(segsN([...segsN(), [a, b]]), [a, b]); }); toast(`Cut removed: ${(b - a).toFixed(1)} s is back in the Short`); }
+  function recut(a, b) {
+    const left = segsN(subtract(segsN(), a, b));
+    if (!left.length) return toast("That would cut the whole clip", true);
+    sel = null; change((E) => { E.segs = left; }); toast(`Cut again: ${(b - a).toFixed(1)} s out`);
+  }
+  // In/Out marks (I and O): a blue band over every track; X cuts it out, Enter keeps it
+  const markRange = () => mark.in != null && mark.out != null && Math.abs(mark.out - mark.in) >= 0.05 ? { a: Math.min(mark.in, mark.out), b: Math.max(mark.in, mark.out) } : { a: null, b: null };
+  function drawMark() {
+    const has = markRange().a != null;
+    for (const id of ["#mark-cut", "#mark-keep"]) { const b = $(id); if (b) b.disabled = !has; }
+    if (!R.mark || !ws || !TR.total) return;
+    R.mark.clearRegions();
+    const put = (opts) => { const r = R.mark.addRegion({ drag: false, resize: false, ...opts }); if (r.element) { r.element.style.pointerEvents = "none"; r.element.style.top = "0px"; r.element.style.height = TR.total + "px"; } return r; };
+    const { a, b } = markRange();
+    if (a != null) { const r = put({ start: a, end: b, color: "rgba(106,168,255,.14)", content: label(`In–Out ${(b - a).toFixed(2)} s · X cuts it · Enter keeps it`) }); if (r.element) r.element.style.borderLeft = r.element.style.borderRight = "2px solid #6aa8ff"; }
+    else for (const [t, name] of [[mark.in, "In"], [mark.out, "Out"]]) if (t != null) put({ start: t, color: "#6aa8ff", content: label(name) });
+  }
+  function setMark(which) {
+    if (!E) return;
+    mark[which] = r2(now()); drawMark();
+    const { a, b } = markRange();
+    toast(a != null ? `Marked ${fmt(a)} – ${fmt(b)} (${(b - a).toFixed(2)} s): X cuts it out, Enter keeps it` : `${which === "in" ? "In" : "Out"} at ${fmt(now())}. Now press ${which === "in" ? "O at the end" : "I at the start"}.`);
+  }
+  function clearMarks() { mark = { in: null, out: null }; drawMark(); }
+  function cutMarked(keep) {
+    if (!E) return;
+    const { a, b } = markRange();
+    if (a == null) return toast("Mark a part first: I at its start, O at its end");
+    if (keep) change((E) => { E.segs = joinAt(segsN([...segsN(), [a, b]]), [a, b]); });
+    else { const left = segsN(subtract(segsN(), a, b)); if (!left.length) return toast("That would cut the whole clip", true); change((E) => { E.segs = left; }); }
+    toast(`${keep ? "Kept" : "Cut out"} ${fmt(a)} – ${fmt(b)} (${(b - a).toFixed(2)} s)`);
+    clearMarks();
+  }
+  // edges you drag snap to where words start and end, the playhead and the marks (hold Alt to place them freely)
+  function snap(t) {
+    if (altHeld || !ws || !E) return t;
+    const room = 8 / ((ws.getWrapper().scrollWidth || 800) / dur());
+    let best = t, bestD = room;
+    const test = (x) => { if (x == null) return; const d = Math.abs(x - t); if (d < bestD) { bestD = d; best = x; } };
+    for (const w of E.words) { test(w.s); test(w.e); }
+    test(now()); test(mark.in); test(mark.out); test(0); test(dur());
+    return r2(best);
+  }
+  // cut by words: the words in time order; a cut takes the pause before the words with it and keeps the one after
+  const sortedWords = () => [...E.words].sort((a, b) => a.s - b.s);
+  function wordsRange(i, j, back) {
+    const W = sortedWords(), a = W[i], b = W[j], prev = W[i - 1], next = W[j + 1];
+    // putting words back brings the pauses around them too (up to 0.6 s each side), so it undoes a cut by words exactly
+    if (back) return [prev ? Math.max(prev.e, a.s - 0.6) : Math.max(0, a.s - 0.6), next ? Math.min(next.s, b.e + 0.6) : Math.min(dur(), b.e + 0.6)];
+    return [prev ? prev.e + Math.min(0.08, Math.max(0, a.s - prev.e) / 2) : Math.max(0, a.s - 0.08),
+      next ? Math.max(b.e, Math.min(next.s - 0.02, b.e + 0.05)) : Math.min(dur(), b.e + 0.15)];
+  }
+  function cutWords(back) {
+    if (!wsel || !E) return;
+    const i = Math.min(wsel.a, wsel.b), j = Math.max(wsel.a, wsel.b), [a, b] = wordsRange(i, j, back).map(r2);
+    if (b - a < 0.03) return;
+    if (back) change((E) => { E.segs = joinAt(segsN([...segsN(), [a, b]]), [a, b]); });
+    else { const left = segsN(subtract(segsN(), a, b)); if (!left.length) return toast("That would cut the whole clip", true); change((E) => { E.segs = left; }); }
+    toast(`${back ? "Put back" : "Cut out"} ${j - i + 1} word${j > i ? "s" : ""} (${(b - a).toFixed(2)} s)`);
+  }
+  // a cut's exact times, typed in the Cuts tab
+  function editCut(c, a2, b2) {
+    a2 = r2(clamp(a2, 0, dur())); b2 = r2(clamp(b2, 0, dur()));
+    if (b2 - a2 < 0.1) return toast("A cut needs at least 0.1 s", true);
+    if (!c.on) return change((E) => { E.cutsKnown = remember(E.cutsKnown.filter((k) => !overlaps(k, [c.a, c.b])), [[a2, b2]]); });
+    const left = segsN(subtract(joinAt(segsN([...segsN(), [c.a, c.b]]), [c.a, c.b]), a2, b2));
+    if (!left.length) return toast("That would cut the whole clip", true);
+    change((E) => { E.cutsKnown = E.cutsKnown.filter((k) => !overlaps(k, [c.a, c.b])); E.segs = left; }, { track: false });
+  }
+  // plays across a cut the way the Short will: a little before it, the jump, a little after
+  function checkJoin(c) {
+    if (c.on) { $("#skipcuts").checked = true; seekTo(Math.max(0, c.a - 1.5)); stopAt = Math.min(dur(), c.b + 1.5); }
+    else { seekTo(Math.max(0, c.a - 0.5)); stopAt = Math.min(dur(), c.b + 0.5); }
+    if ($("#video").paused) togglePlay();
+  }
+  function forgetCut(a, b) { sel = null; change((E) => { E.cutsKnown = E.cutsKnown.filter((k) => !overlaps(k, [a, b])); }); }
   const subtract = (segs, a, b) => segs.flatMap(([x, y]) => y <= a || x >= b ? [[x, y]] : [x < a ? [x, a] : null, y > b ? [b, y] : null].filter(Boolean));
   // captions exactly as make-short.cjs groups them
   function captionGroups(words, group) {
@@ -372,8 +503,9 @@
     if (!E.frame.head) q.set("nohead", "1");
     if (!E.frame.foot) q.set("nofoot", "1");
     if ($("#zones").checked) q.set("zones", "1");
-    if (D.accent) q.set("accent", D.accent);
-    const src = fileSrc(D.overlayHtml) + "?d=" + encodeURIComponent(JSON.stringify(Object.fromEntries(q)));
+    if (E.appearance.accent) q.set("accent", E.appearance.accent);
+    const frame = THEMES.find((t) => t.id === E.appearance.theme)?.frame || D.overlayHtml;
+    const src = fileSrc(frame) + "?d=" + encodeURIComponent(JSON.stringify(Object.fromEntries(q)));
     if (src === frameWant) return;
     frameWant = src; clearTimeout(frameTimer); frameTimer = setTimeout(() => ($("#pv-frame").src = src), 200);
   }
@@ -574,6 +706,7 @@
     vip: "rgba(227,169,72,.40)", text: "rgba(239,68,59,.40)", card: "rgba(200,204,212,.24)", sticker: "rgba(255,210,63,.32)", zoom: "rgba(106,168,255,.36)", slow: "rgba(63,207,142,.36)",
     freeze: "#6aa8ff", sfx: "rgba(227,169,72,.42)", music: "rgba(180,140,255,.30)" };
   let building = false, sel = null, dragMode = "keep", downY = 0;
+  let mark = { in: null, out: null }, altHeld = false, stopAt = null, wsel = null, wdrag = false;
   const label = (text) => { const d = document.createElement("div"); d.textContent = text;
     d.style.cssText = "padding:1px 4px;font:11px/1.2 'Segoe UI',sans-serif;color:#ebe5d8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;box-sizing:border-box;pointer-events:none"; return d; };
   // which track a y position (inside the wrapper) is in
@@ -581,16 +714,16 @@
   const stickerName = (x) => x.kind === "emoji" ? x.emoji || "😂" : x.kind === "image" ? (x.name || "picture") : x.kind === "arrow" ? "➜ arrow" : x.kind === "circle" ? "◯ circle" : (x.text || x.kind);
   const soundName = (file) => { const x = libEntry(file); return x ? x.name : String(file || "").split(/[\\/]/).pop(); };
   const soundLen = (file) => { const x = libEntry(file); return x && x.dur ? x.dur : 1; };
-  const LANES = ["keep", "words", "notes", "texts", "head", "foot", "stickers", "zoom", "speed", "sfx", "music"];
-  const TAB_OF = { word: "captions", note: "chat", text: "text", head: "title", foot: "title", sticker: "stickers", zoom: "fx", slow: "fx", freeze: "fx", sfx: "sound", music: "sound" };
+  const LANES = ["keep", "cuts", "words", "notes", "texts", "head", "foot", "stickers", "zoom", "speed", "sfx", "music"];
+  const TAB_OF = { cut: "cuts", uncut: "cuts", word: "captions", note: "chat", text: "text", head: "title", foot: "title", sticker: "stickers", zoom: "fx", slow: "fx", freeze: "fx", sfx: "sound", music: "sound" };
   function initTimeline() {
     const v = $("#video");
     trackLayout();
-    for (const k of ["cut", ...LANES]) R[k] = WaveSurfer.Regions.create();
+    for (const k of ["cut", "mark", ...LANES]) R[k] = WaveSurfer.Regions.create();
     ws = WaveSurfer.create({ container: "#wave", media: v, url: v.src, peaks: [D.peaks], duration: D.clipSeconds, height: TR.audio.h, normalize: true, barHeight: 0.92,
       waveColor: "#5b6272", progressColor: "#8d96a8", cursorColor: "#ef443b", cursorWidth: 2, autoScroll: true, autoCenter: true, dragToSeek: false,
       plugins: [WaveSurfer.Timeline.create({ height: RULER, style: { fontSize: "10px", color: "#8d919b" } }), WaveSurfer.Zoom.create({ scale: 0.3, maxZoom: 800 }),
-        R.cut, ...LANES.map((k) => R[k])] });
+        R.cut, R.mark, ...LANES.map((k) => R[k])] });
     ws.on("ready", () => { syncLanes(); fitZoom = ($("#wave").clientWidth || 800) / dur(); });
     ws.on("zoom", (px) => { if (fitZoom) $("#zoom").value = Math.round(100 * Math.log(Math.max(1, px / fitZoom)) / Math.log(40)); });
     // where a drag on empty timeline starts decides what it makes
@@ -603,7 +736,13 @@
       if (b - a < 0.1) return;
       makeOnTrack(k, a, b);
     });
-    R.keep.on("region-updated", (r) => { if (!r.data) return; change((E) => { const s = segsN(); s[r.data.i] = [r.start, r.end]; E.segs = segsN(s); }); });
+    R.keep.on("region-updated", (r) => { if (!r.data) return; change((E) => {
+      const s = segsN(), old = s[r.data.i] || [r.start, r.end];
+      let a = r.start, b = r.end;
+      const moved = Math.abs(a - old[0]) > 0.001 && Math.abs(b - old[1]) > 0.001 && Math.abs((b - a) - (old[1] - old[0])) < 0.002;
+      if (moved) { const na = snap(a); b += na - a; a = na; } else { if (Math.abs(a - old[0]) > 0.001) a = snap(a); if (Math.abs(b - old[1]) > 0.001) b = snap(b); }
+      s[r.data.i] = [a, b]; E.segs = segsN(s);
+    }); });
     R.words.on("region-updated", (r) => change((E) => { const w = E.words[r.data.i]; w.s = r2(r.start); w.e = r2(Math.max(r.end, r.start + 0.03)); E.words.sort((a, b) => a.s - b.s); }));
     R.notes.on("region-updated", (r) => change((E) => { const n = E.notes.find((x) => x.key === r.data.key); if (n) { n.t = r2(r.start); n.hold = r2(clamp(r.end - r.start, 0.5, 15)); } }));
     R.texts.on("region-updated", (r) => change((E) => { const x = E.texts[r.data.i]; x.t = r2(r.start); x.e = r2(Math.max(r.end, r.start + 0.2)); }));
@@ -630,6 +769,8 @@
       R[k].on("region-double-clicked", (r) => {
         if (!r.data) return;
         const d = r.data;
+        if (d.kind === "cut") return uncut(d.a, d.b);
+        if (d.kind === "uncut") return recut(d.a, d.b);
         if (d.kind === "word") { setTab("captions"); focusLater(`#ipane .wrow[data-i="${d.i}"] input`); }
         else if (d.kind === "text") { setTab("text"); focusLater(`#ipane .trow[data-i="${d.i}"] textarea`); }
         else if (d.kind === "note") { setTab("chat"); focusLater(`#ipane .crow[data-key="${CSS.escape(d.key)}"] input.own`); }
@@ -641,7 +782,11 @@
   }
   // a drag across an empty track makes something there
   function makeOnTrack(k, a, b) {
-    if (k === "keep" || k === "audio" || k === "ruler") change((E) => { E.segs = dragMode === "keep" ? segsN([...E.segs, [a, b]]) : subtract(segsN(), a, b); });
+    if (k === "keep" || k === "audio" || k === "ruler") {
+      const sa = snap(a), sb = snap(b); if (sb - sa < 0.05) return;
+      if (dragMode !== "keep" && !segsN(subtract(segsN(), sa, sb)).length) return toast("That would cut the whole clip", true);
+      change((E) => { E.segs = dragMode === "keep" ? segsN([...E.segs, [sa, sb]]) : subtract(segsN(), sa, sb); });
+    }
     else if (k === "texts") { change((E) => { E.texts.push({ text: "NEW TEXT", t: a, e: b, y: 900, size: 84, color: "#ffffff", box: true }); }); sel = { kind: "text", i: E.texts.length - 1 }; setTab("text"); focusLater(`#ipane .trow[data-i="${sel.i}"] textarea`); }
     else if (k === "head" || k === "foot") change((E) => { E.frame[k] = true; E.frame[k + "From"] = a < 0.05 ? null : a; E.frame[k + "To"] = b > dur() - 0.05 ? null : b; });
     else if (k === "stickers") addSticker({ kind: "emoji", emoji: "😂" }, a, b);
@@ -666,6 +811,18 @@
       R.cut.clearRegions();
       for (const [a, b] of gaps(segs)) { const r = R.cut.addRegion({ start: a, end: b, color: COL.cut, drag: false, resize: false }); if (r.element) { r.element.style.pointerEvents = "none"; r.element.style.height = TR.total + "px"; } }
       const redo = (k) => except !== k && (R[k].clearRegions(), true);
+      // each cut on the Video track: a ✂ chip in the gap; a part that was cut and put back keeps a dashed line under it
+      if (redo("cuts")) cutList().forEach((c, i) => {
+        const r = R.cuts.addRegion({ start: c.a, end: c.b, drag: false, resize: false, color: c.on ? "rgba(239,68,59,.08)" : "rgba(239,68,59,.18)",
+          content: c.on ? label(`✂ ${(c.b - c.a).toFixed(1)} s`) : undefined });
+        r.data = { kind: c.on ? "cut" : "uncut", i, a: c.a, b: c.b };
+        if (!r.element || !TR.keep) return;
+        const st = r.element.style;
+        if (c.on) { st.top = TR.keep.top + 1 + "px"; st.height = TR.keep.h - 2 + "px"; st.border = "1px dashed rgba(239,68,59,.75)"; st.borderRadius = "3px"; }
+        else { st.top = TR.keep.top + TR.keep.h - 7 + "px"; st.height = "6px"; st.border = "1px dashed rgba(239,68,59,.9)"; st.borderRadius = "3px"; }
+        r.element.title = c.on ? `Cut ${fmt(c.a)} – ${fmt(c.b)}: press Delete or double-click to put it back in the Short`
+          : `Was cut ${fmt(c.a)} – ${fmt(c.b)}, now back in the Short: double-click to cut it again`;
+      });
       if (redo("keep")) segs.forEach(([a, b], i) => add("keep", { start: a, end: b, color: COL.keep, content: label((b - a).toFixed(1) + " s"), minLength: 0.1 }, { kind: "keep", i }));
       if (redo("words")) E.words.forEach((w, i) => { const r = add("words", { start: w.s, end: Math.max(w.e, w.s + 0.03), color: w.bleep ? COL.bleep : COL.word, content: label((w.emoji || "") + (w.bleep ? bleepText(w.w) : w.w)), minLength: 0.03 }, { kind: "word", i }); dim(r, !E.captions); });
       if (redo("notes")) {
@@ -692,6 +849,7 @@
         add(k, { start: clamp(from, 0, dur()), end: clamp(to, 0, dur()), color: COL.card, content: label(text), minLength: 0.3 }, { kind: k, i: 0 });
       }
     } finally { building = false; }
+    drawMark();
     markSelected();
     renderTrackLabels();
   }
@@ -704,6 +862,7 @@
   }
   function deleteSelected() {
     if (!sel) return;
+    if (sel.kind === "cut" || sel.kind === "uncut") { const c = cutList()[sel.i]; if (!c) return; return sel.kind === "cut" ? uncut(c.a, c.b) : forgetCut(c.a, c.b); }
     const s = sel; sel = null;
     change((E) => {
       if (s.kind === "keep") { const segs = segsN(); segs.splice(s.i, 1); E.segs = segs; }
@@ -750,7 +909,7 @@
   }
   function addSticker(spec, a, b) {
     const t = a ?? now(), e = b ?? Math.min(dur(), t + 2.5);
-    change((E) => { E.stickers.push({ size: spec.kind === "stamp" || spec.kind === "label" ? 360 : spec.kind === "arrow" || spec.kind === "circle" ? 280 : 200, x: 700, y: 540, rot: spec.kind === "stamp" ? -8 : 0, color: D.accent || "#ef443b", ...spec, t: r2(t), e: r2(e) }); });
+    change((E) => { E.stickers.push({ size: spec.kind === "stamp" || spec.kind === "label" ? 360 : spec.kind === "arrow" || spec.kind === "circle" ? 280 : 200, x: 700, y: 540, rot: spec.kind === "stamp" ? -8 : 0, color: E.appearance.accent || "#ef443b", ...spec, t: r2(t), e: r2(e) }); });
     sel = { kind: "sticker", i: E.stickers.length - 1 }; markSelected(); setTab("stickers");
   }
   let lastSfxFile = "";
@@ -786,7 +945,7 @@
   function renderPane() {
     if (!E) return;
     const pane = $("#ipane"), top = pane.scrollTop;
-    pane.replaceChildren(...({ look: paneLook, title: paneTitle, captions: paneCaptions, chat: paneChat, text: paneText, stickers: paneStickers, fx: paneFx, sound: paneSound, post: panePost }[tab])());
+    pane.replaceChildren(...({ look: paneLook, cuts: paneCuts, title: paneTitle, captions: paneCaptions, chat: paneChat, text: paneText, stickers: paneStickers, fx: paneFx, sound: paneSound, post: panePost }[tab])());
     pane.scrollTop = top;
     // how many of each, on the tabs
     const badge = (t, name, n) => { const b = document.querySelector(`#itabs [data-t="${t}"]`); if (b) b.replaceChildren(name, n ? el("em", { text: String(n) }) : ""); };
@@ -795,6 +954,7 @@
     badge("stickers", "Stickers", E.stickers.length);
     badge("fx", "FX", E.zooms.length + E.speeds.length + E.freezes.length);
     badge("sound", "Sound", E.sfx.length + (E.music ? 1 : 0) + E.words.filter((w) => w.bleep).length);
+    badge("cuts", "Cuts", cutList().filter((c) => c.on).length);
     badge("look", "Look", E.join.ids.length ? "+" + E.join.ids.length : 0);
   }
   const LAYOUTS = [["split", "Camera + game"], ["stage", "Stage"], ["letterbox", "Whole"], ["center", "You, centred"]];
@@ -817,6 +977,7 @@
         slider("Picture top", 0, 1600, 2, g.y, (v) => change((E) => { E.geoBy[l].y = v; }, { merge: "y", insp: false, lanes: false }), " px"),
         el("div", { class: "hint", text: "Or drag the picture up and down on the preview. The rest of the band shows a blurred copy." })];
     return [
+      presetSection(),
       el("div", { class: "sec" }, el("h3", { text: "Layout" }),
         el("div", { class: "layouts" }, LAYOUTS.map(([k, name]) => el("button", { class: "l-" + k + (k === l ? " on" : ""), onclick: () => setLayout(k) }, el("i"), name))),
         el("div", { class: "hint", text: { split: "Your camera on top, the game underneath.", stage: "A 4:3 crop, big: good for a game with the action in the middle.", letterbox: "The whole 16:9 picture.", center: "A tall crop that fills the Short: good for just-chatting and a camera." }[l] })),
@@ -829,8 +990,46 @@
       joinSection(),
       el("div", { class: "sec" }, el("h3", { text: "Words on the Short" }),
         el("div", { class: "hint", text: "Title, subtitle, the top line, the date and the bottom card are in the Title tab. Captions are in Captions, your own text in Text, and what gets posted in Post. Double-click anything on the preview to change its words." })),
-      el("div", { class: "sec" }, el("h3", { text: "Keys" }), el("div", { class: "hint", text: "Space play/pause · ←/→ 0.1 s (Shift: 1 s) · S split · Delete removes what's selected · Ctrl+Z / Ctrl+Y · Ctrl+S save. Scroll on the waveform to zoom." })),
+      el("div", { class: "sec" }, el("h3", { text: "Keys" }), el("div", { class: "hint", text: "Space play/pause · ←/→ 0.1 s (Shift: 1 s) · S split · I / O mark a part, X cuts it, Enter keeps it · Delete removes what's selected · Ctrl+Z / Ctrl+Y · Ctrl+S save. Scroll on the waveform to zoom; hold Alt while dragging to skip snapping." })),
     ];
+  }
+  function presetSection() {
+    const selected = PRESETS.find((p) => p.id === presetId);
+    const select = el("select", { id: "editor-preset", "aria-label": "Saved editing preset" },
+      el("option", { value: "", text: "Choose a preset…" }), ...PRESETS.map((p) => el("option", { value: p.id, text: p.name })));
+    select.value = selected ? presetId : "";
+    select.addEventListener("change", () => { presetId = select.value; presetName = PRESETS.find((p) => p.id === presetId)?.name || ""; renderPane(); });
+    const name = el("input", { id: "preset-name", value: presetName, maxlength: "60", placeholder: "Gaming, Just Chatting, Funny reactions…", "aria-label": "Preset name" });
+    name.addEventListener("input", () => { presetName = name.value; });
+    const savePreset = async (replace) => {
+      if (replace && !confirm(`Update “${selected.name}” with this look?`)) return;
+      try {
+        const p = await studio.savePreset({ ...(replace ? { id: presetId } : {}), name: name.value, edits: toEdits() });
+        PRESETS = await studio.presets(); presetId = p.id; presetName = p.name; renderPane();
+        toast(`Preset “${p.name}” saved. Choose it above Your clips for a batch.`);
+      } catch (e) { toast(e.message, true); }
+    };
+    return el("div", { class: "sec presets" }, el("h3", { text: "Presets" }),
+      el("div", { class: "row" }, select, el("button", { id: "apply-preset", text: "Apply", disabled: !selected, onclick: async () => {
+        try {
+          const p = await studio.presetStyle(presetId);
+          change((E) => {
+            E.layout = p.layout; E.geoBy[p.layout] = clone(p.geo); E.cropsBy[p.layout] = clone(p.crops);
+            E.appearance = clone(p.appearance); E.cap = { ...E.cap, ...p.cap }; E.frame = { ...E.frame, ...p.frame };
+            E.captions = p.captions; E.chatOn = p.chat; E.volume = p.volume ?? 0; E.noteWidth = p.noteWidth ?? E.noteWidth;
+            E.music = p.music ? clone(p.music) : null;
+          });
+          toast(`Applied “${selected.name}”. Undo to go back; Save & rebuild to export.`);
+        } catch (e) { toast(e.message, true); }
+      } })),
+      name,
+      el("div", { class: "row" }, el("button", { id: "save-preset", text: "Save as new", onclick: () => savePreset(false) }),
+        el("button", { id: "update-preset", text: "Update preset", disabled: !selected, onclick: () => savePreset(true) }),
+        el("button", { id: "delete-preset", text: "Delete", disabled: !selected, onclick: async () => {
+          if (!confirm(`Delete preset “${selected.name}”? Your Shorts keep their look.`)) return;
+          try { await studio.deletePreset(presetId); toast("Preset deleted. Your Shorts are unchanged."); } catch (e) { toast(e.message, true); }
+        } })),
+      el("div", { class: "hint", text: "Saves layout, crops, theme, captions, title placement, branding, volume and music. Each clip keeps its own words, cuts and effects. Music starts at the beginning of each Short." }));
   }
   // when a card shows: its bar on the timeline, or the whole Short
   function cardTiming(k) {
@@ -1072,7 +1271,7 @@
       const kindFields = [];
       if (x.kind === "emoji") { const inp = el("input", { value: x.emoji || "", style: "width:70px" }); inp.addEventListener("input", () => upd((s, v) => (s.emoji = v), "se")(inp.value)); kindFields.push("emoji", inp); }
       if (x.kind === "stamp" || x.kind === "label") { const inp = el("input", { value: x.text || "", style: "width:140px" }); inp.addEventListener("input", () => upd((s, v) => (s.text = v), "st")(inp.value)); kindFields.push("text", inp); }
-      if (["arrow", "circle", "stamp", "label"].includes(x.kind)) kindFields.push(colorInput(x.color || D.accent || "#ef443b", upd((s, v) => (s.color = v), "sc")));
+      if (["arrow", "circle", "stamp", "label"].includes(x.kind)) kindFields.push(colorInput(x.color || E.appearance.accent || "#ef443b", upd((s, v) => (s.color = v), "sc")));
       return el("div", { class: "srow" + (sel && sel.kind === "sticker" && sel.i === i ? " sel-row" : ""), "data-i": i, tabindex: "-1" },
         el("div", { class: "row" }, thumb, el("b", { text: stickerName(x) }), el("span", { class: "grow" }), ...kindFields),
         slider("Size", 40, 1000, 10, x.size || 200, upd((s, v) => (s.size = v), "ss"), " px"),
@@ -1088,11 +1287,62 @@
       el("div", { class: "sec" }, el("h3", { text: "Add at the playhead" }),
         el("div", { class: "picks" }, EMOJI.map((x) => pick({ kind: "emoji", emoji: x }, x))),
         el("div", { class: "picks" },
-          pick({ kind: "arrow" }, "➜ Arrow"), pick({ kind: "circle" }, "◯ Circle"), ...(D.stamps || ["EVIDENCE"]).map((t) => pick({ kind: "stamp", text: t }, t)), ...(D.labels || ["EXHIBIT A"]).map((t) => pick({ kind: "label", text: t }, t + " label"))),
+          pick({ kind: "arrow" }, "➜ Arrow"), pick({ kind: "circle" }, "◯ Circle"), ...(THEMES.find((t) => t.id === E.appearance.theme)?.stamps || D.stamps || ["EVIDENCE"]).map((t) => pick({ kind: "stamp", text: t }, t)), ...(THEMES.find((t) => t.id === E.appearance.theme)?.labels || D.labels || ["EXHIBIT A"]).map((t) => pick({ kind: "label", text: t }, t + " label"))),
         (lib.emotes || []).length ? el("div", {}, el("div", { class: "hint", text: "Your channel's emotes" }), el("div", { class: "picks" }, lib.emotes.map(emote))) : null,
         (lib.stickers || []).length ? el("div", {}, el("div", { class: "hint", text: "Your pictures" }), el("div", { class: "picks" }, lib.stickers.map(emote))) : null,
         el("div", { class: "hint", text: "Drag a sticker on the preview to move it, and on the timeline's Stickers track to change when it shows. Drag across the empty Stickers track to add one there. Add your own pictures with the Pictures folder button in the Sound tab, then Refresh library." })),
       ...(rows.length ? rows : [el("div", { class: "empty", text: "No stickers yet." })]),
+    ];
+  }
+
+  // ---------- Cuts: everything cut out of the clip, to put back or cut again ----------
+  function paneCuts() {
+    const list = cutList(), out = list.filter((c) => c.on), back = list.filter((c) => !c.on);
+    // the words, to cut or put back by selecting them
+    const W = sortedWords(), m = mm(), inS = (w) => m.map((w.s + w.e) / 2) != null;
+    const [i0, i1] = wsel ? [Math.min(wsel.a, wsel.b), Math.max(wsel.a, wsel.b)] : [-1, -2];
+    const picked = W.slice(Math.max(0, i0), i1 + 1), anyIn = picked.some(inS), anyOut = picked.some((w) => !inS(w));
+    const toks = W.map((w, i) => el("span", { class: "wtok" + (inS(w) ? "" : " out") + (i >= i0 && i <= i1 ? " picked" : ""), "data-i": i, text: w.w, title: `${fmt(w.s)} – ${fmt(w.e)}${inS(w) ? "" : " (cut out)"}` }));
+    const box = el("div", { class: "wtext" }, ...toks.flatMap((t, i) => i ? [" ", t] : [t]));
+    const paint = () => { const [x, y] = [Math.min(wsel.a, wsel.b), Math.max(wsel.a, wsel.b)]; for (const t of box.querySelectorAll(".wtok")) t.classList.toggle("picked", +t.dataset.i >= x && +t.dataset.i <= y); };
+    box.addEventListener("pointerdown", (e) => { const t = e.target.closest(".wtok"); if (!t) return; e.preventDefault(); const i = +t.dataset.i;
+      wsel = e.shiftKey && wsel ? { a: wsel.a, b: i } : { a: i, b: i }; wdrag = true; seekTo(W[i].s); paint(); });
+    box.addEventListener("pointerover", (e) => { if (!wdrag) return; const t = e.target.closest(".wtok"); if (!t) return; wsel.b = +t.dataset.i; paint(); });
+    const words = el("div", { class: "sec" },
+      el("div", { class: "row" }, el("h3", { text: "Cut by words" }), el("span", { class: "grow" }),
+        el("button", { class: anyIn ? "primary" : "", text: "✂ Cut these words", disabled: !anyIn, title: "Delete", onclick: () => cutWords(false) }),
+        el("button", { text: "↺ Put them back", disabled: !anyOut, onclick: () => cutWords(true) })),
+      W.length ? box : el("div", { class: "empty", text: "No words in this clip." }),
+      el("div", { class: "hint", text: picked.length ? `${picked.length} word${picked.length === 1 ? "" : "s"} picked · ${fmt(picked[0].s)} – ${fmt(picked[picked.length - 1].e)} · Delete cuts them, Esc lets go`
+        : "Click a word, or drag across words (Shift+click adds up to a word). Crossed-out words are cut out of the Short." }));
+    const secs = out.reduce((t, c) => t + c.b - c.a, 0);
+    const rows = list.map((c, i) => el("div", { class: "srow cutrow" + (c.on ? "" : " back") + (sel && (sel.kind === "cut" || sel.kind === "uncut") && sel.i === i ? " sel-row" : ""), "data-i": i },
+      el("div", { class: "row" },
+        el("b", { text: c.on ? "✂ Cut out" : "↺ Back in" }),
+        el("span", { class: "mono", text: `${fmt(c.a)} – ${fmt(c.b)}` }), el("span", { class: "hint", text: (c.b - c.a).toFixed(2) + " s" }),
+        el("span", { class: "grow" }),
+        el("button", { text: c.on ? "▶ Check" : "▶", title: c.on ? "Play across the cut like the Short: a little before it, the jump, a little after" : "Play this part", onclick: () => { sel = { kind: c.on ? "cut" : "uncut", i }; markSelected(); checkJoin(c); } }),
+        c.on ? el("button", { text: "Remove cut", title: "Put this part back in the Short", onclick: () => uncut(c.a, c.b) })
+          : el("button", { text: "Cut again", title: "Take this part out of the Short again", onclick: () => recut(c.a, c.b) }),
+        c.on ? null : el("button", { text: "✕", title: "Forget this cut (the part stays in the Short)", onclick: () => forgetCut(c.a, c.b) })),
+      el("div", { class: "row times" }, el("span", { class: "hint", text: "from" }), num(c.a.toFixed(2), "0.05", (v) => editCut(c, v, c.b)),
+        el("span", { class: "hint", text: "to" }), num(c.b.toFixed(2), "0.05", (v) => editCut(c, c.a, v)),
+        el("span", { class: "hint", text: "seconds in the clip" }))));
+    return [
+      words,
+      el("div", { class: "sec" },
+        el("div", { class: "row" }, el("h3", { text: "Cuts" }), el("span", { class: "grow" }),
+          el("button", { text: "Remove all cuts", disabled: !out.length, onclick: () => { sel = null; change((E) => { E.segs = [[0, dur()]]; }); } }),
+          el("button", { text: "Cut all again", disabled: !back.length, onclick: () => {
+            let left = segsN(); for (const c of back) left = subtract(left, c.a, c.b); left = segsN(left);
+            if (!left.length) return toast("That would cut the whole clip", true);
+            sel = null; change((E) => { E.segs = left; });
+          } })),
+        el("div", { class: "hint", text: "Everything cut out of the clip, and the cuts you put back. Remove cut puts that part back in the Short; Cut again takes it out again. Type a cut's times to move its edges; ▶ Check plays across it the way the Short will." }),
+        el("div", { class: "hint", text: "Keys: I marks where a part starts and O where it ends (at the playhead); X cuts that part out, Enter keeps it. Edges you drag snap to words and the playhead; hold Alt to place them freely." }),
+        el("div", { class: "hint", text: "On the timeline: click a ✂ cut on the Video track and press Delete, or double-click it. A part you put back keeps a dashed red line under it; double-click the line to cut it again." }),
+        el("div", { class: "hint", text: out.length ? `${out.length} cut${out.length === 1 ? "" : "s"}, ${secs.toFixed(1)} s taken out. The Short is ${mm().outDur.toFixed(1)} s.` : `Nothing is cut out: the Short is the whole clip (${mm().outDur.toFixed(1)} s).` })),
+      ...(rows.length ? rows : [el("div", { class: "empty", text: "No cuts yet. Drag across the Video track in cut mode, or Split and Delete, to take a part out." })]),
     ];
   }
 
@@ -1244,7 +1494,7 @@
     if (!edits.segs.length) return toast("Keep at least one part of the clip", true);
     busy = true; setStatus("busy", "Sending...");
     (DRY ? Promise.resolve() : studio.saveEdit(ID, edits)).then(() => {
-      saved = JSON.stringify(E);
+      saved = JSON.stringify(E); dropDraft();
       if (DRY) { window.__saved = edits; busy = false; setStatus("ok", "Saved (test: nothing was rebuilt)"); return; }
       setStatus("busy", "Rebuilding...");
       watchBuild((x) => {
@@ -1274,7 +1524,7 @@
       passed = new Set(mm().pieces.filter((p) => p.kind === "freeze" && p.t < v.currentTime - 0.03).map((p) => p.t));
       lastS = null; ensureAudio();
       v.play().catch(() => {});
-    } else { v.pause(); stopSounds(); }
+    } else { v.pause(); stopSounds(); stopAt = null; }
   }
   function stopSounds() { if (musicEl) musicEl.pause(); beepOn(false); $("#video").muted = false; }
   // the bleep tone (Web Audio: the page makes it, no file needed)
@@ -1324,6 +1574,7 @@
       const rate = baseRate() * (piece ? piece.speed : 1);
       if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = rate;
     } else if (!likeShort() && v.playbackRate !== baseRate()) v.playbackRate = baseRate();
+    if (stopAt != null && !v.paused && t >= stopAt - 0.02 && t < stopAt + 1) { v.pause(); stopSounds(); stopAt = null; }
     $("#play").textContent = playing() ? "❚❚" : "▶";
     $("#tc").textContent = `${fmt(t)} / ${fmt(dur())}`;
     if (playing() || needDraw) { draw(); needDraw = false; }
@@ -1345,12 +1596,12 @@
   function wireStatic() {
     $("#close").addEventListener("click", () => {
       if (E && JSON.stringify(E) !== saved && !confirm("Close without saving your changes?")) return;
-      saved = E ? JSON.stringify(E) : saved;
+      saved = E ? JSON.stringify(E) : saved; dropDraft();
       window.close();
     });
     $("#undo").addEventListener("click", undo);
     $("#redo").addEventListener("click", redo);
-    $("#revert").addEventListener("click", () => { if (!E) return; if (!confirm("Throw away the changes since you opened the editor?")) return; change((e) => Object.assign(e, fromD())); });
+    $("#revert").addEventListener("click", () => { if (!E) return; if (!confirm("Throw away the changes since you opened the editor?")) return; change((e) => Object.assign(e, fromD()), { track: false }); });   // exactly what was saved, cut list included
     $("#save").addEventListener("click", save);
     $("#watch").addEventListener("click", watchResult);
     $("#modal-close").addEventListener("click", () => { $("#result").pause(); $("#modal").hidden = true; });
@@ -1386,16 +1637,27 @@
       else if (e.key === " ") { e.preventDefault(); togglePlay(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); seekTo(now() - (e.shiftKey ? 1 : 0.1)); }
       else if (e.key === "ArrowRight") { e.preventDefault(); seekTo(now() + (e.shiftKey ? 1 : 0.1)); }
-      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelected(); }
+      else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); if (wsel && tab === "cuts") cutWords(false); else deleteSelected(); }
+      else if (e.key.toLowerCase() === "i" && !mod) { e.preventDefault(); setMark("in"); }
+      else if (e.key.toLowerCase() === "o" && !mod) { e.preventDefault(); setMark("out"); }
+      else if (e.key.toLowerCase() === "x" && !mod) { e.preventDefault(); cutMarked(false); }
+      else if (e.key === "Enter" && e.target.tagName !== "BUTTON" && markRange().a != null) { e.preventDefault(); cutMarked(true); }
       else if (e.key.toLowerCase() === "s" && !mod) { e.preventDefault(); splitAtPlayhead(); }
       else if (e.key.toLowerCase() === "z" && !mod) { e.preventDefault(); addZoom(); }
       else if (e.key.toLowerCase() === "f" && !mod) { e.preventDefault(); addFreeze(); }
       else if (e.key.toLowerCase() === "b" && !mod) { e.preventDefault(); bleepAtPlayhead(); }
-      else if (e.key === "Escape") { sel = null; markSelected(); overlayKey = ""; renderPane(); }
+      else if (e.key === "Escape") { sel = null; wsel = null; clearMarks(); markSelected(); overlayKey = ""; renderPane(); }
     });
     window.addEventListener("beforeunload", (e) => { if (E && JSON.stringify(E) !== saved) { e.preventDefault(); e.returnValue = ""; } });
+    // Alt held while dragging = no snapping; a word drag ends wherever the mouse is let go
+    for (const ev of ["pointerdown", "pointermove", "pointerup"]) window.addEventListener(ev, (e) => { altHeld = e.altKey; if (ev === "pointerup" && wdrag) { wdrag = false; if (tab === "cuts") renderPane(); } }, true);
+    $("#mark-in").addEventListener("click", () => setMark("in"));
+    $("#mark-out").addEventListener("click", () => setMark("out"));
+    $("#mark-cut").addEventListener("click", () => cutMarked(false));
+    $("#mark-keep").addEventListener("click", () => cutMarked(true));
   }
 
-  window.__editor = { get E() { return E; }, get D() { return D; }, toEdits: () => toEdits(), mm: () => mm(), change, setTab, setLayout };   // for the self-test
+  window.__editor = { get E() { return E; }, get D() { return D; }, toEdits: () => toEdits(), mm: () => mm(), change, setTab, setLayout,
+    snap: (t) => snap(t), cutList: () => cutList(), get mark() { return mark; }, get wsel() { return wsel; } };   // for the self-test
   start();
 })();

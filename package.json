@@ -1,7 +1,7 @@
 {
   "name": "shorts-studio",
   "productName": "Shorts Studio",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Turn your Twitch clips into vertical Shorts: captions, chat, zooms, sound effects, stickers, and a full editor.",
   "author": "RottenAppleee",
   "license": "MIT",
@@ -11,7 +11,8 @@
     "start": "electron .",
     "tools": "node scripts/fetch-tools.cjs",
     "dist": "node scripts/run-electron-node.cjs scripts/build.cjs",
-    "test:ui": "electron scripts/test-ui.cjs"
+    "test:ui": "electron scripts/test-ui.cjs",
+    "test:presets": "electron scripts/test-presets.cjs"
   },
   "devDependencies": {
     "electron": "^39.8.10",

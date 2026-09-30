@@ -54,6 +54,7 @@
   <aside id="insp" class="card">
     <nav id="itabs">
       <button data-t="look" class="active" title="Layout, crops, sizes, sound">Look</button>
+      <button data-t="cuts" title="Everything cut out of the clip: remove a cut or cut it again">Cuts</button>
       <button data-t="title" title="Title, subtitle, top line, date and the bottom card">Title</button>
       <button data-t="captions" title="The captions: their words, timing and look">Captions</button>
       <button data-t="chat" title="Chat messages as notes on the Short">Chat</button>
@@ -78,6 +79,11 @@
       <button id="tb-bleep" title="Bleep the word at the playhead (B)">&#128263; Bleep</button>
       <button id="autotrim" title="What smart trim picked">Smart trim</button>
       <button id="keepall" title="Keep the whole clip">Keep all</button>
+      <span class="tsep"></span>
+      <button id="mark-in" title="Mark where a part starts, at the playhead (I)">[ In</button>
+      <button id="mark-out" title="Mark where it ends, at the playhead (O)">Out ]</button>
+      <button id="mark-cut" title="Cut out the part between In and Out (X)" disabled>&#9986; Cut marked</button>
+      <button id="mark-keep" title="Keep the part between In and Out (Enter)" disabled>Keep marked</button>
       <span class="grow"></span>
       <span id="outlen" class="mono"></span>
       <label class="check">Zoom <input type="range" id="zoom" min="0" max="100" value="0"></label>

@@ -286,7 +286,7 @@ async function load(s, step) {
 // stickers, upload, join. hideHead: no title card (a joined Short puts one over all of it); noEditData: a joined part.
 async function render(clip, p, work, out, { layout, step, edits = {}, post = {}, trim, hideHead = false, noEditData = false, kicker }) {
   edits = edits || {};
-  const settings = S.settings(), th = theme(settings);
+  const settings = { ...S.settings(), ...(edits.appearance || {}) }, th = theme(settings);
   trim = trim || settings.trim;
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
   const volumeDb = Math.round(clampN(+edits.volume || 0, -20, 20) * 2) / 2;
@@ -491,7 +491,8 @@ function layoutFor(clip, settings) {
 }
 
 // a clip (link or slug) -> a Short
-function makeShort(slugOrUrl) {
+function makeShort(slugOrUrl, presetStyle = {}) {
+  const edits = JSON.parse(JSON.stringify(presetStyle));
   const clipSlug = T.slugFrom(slugOrUrl);
   if (!clipSlug) return Promise.reject(new Error("That doesn't look like a Twitch clip link"));
   const id = "c-" + clipSlug.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60);
@@ -500,14 +501,16 @@ function makeShort(slugOrUrl) {
     const step = stepper(id);
     try {
       await step("Asking Twitch");
-      const clip = await T.clip(clipSlug), settings = S.settings(), { layout, scene } = layoutFor(clip, settings);
+      const clip = await T.clip(clipSlug), settings = S.settings(), chosen = layoutFor(clip, settings);
+      const layout = edits.layout || chosen.layout, scene = chosen.scene;
       const made = new Date(clip.createdAt), dir = path.join(S.outDir(), made.toISOString().slice(0, 10)), name = `${made.toTimeString().slice(0, 5).replace(":", "")}-${slug(clip.title)}`;
       const work = path.join(dir, name), out = path.join(dir, name + ".mp4"), thumb = path.join(dir, name + ".jpg");
       S.update(id, { title: clip.title, by: clip.by, views: clip.views, channel: clip.channel, clipUrl: clip.url, madeAt: clip.createdAt, clipSeconds: clip.duration,
-        videoId: clip.videoId, videoOffset: clip.videoOffset, layout, scene, work, file: out, thumb });
+        videoId: clip.videoId, videoOffset: clip.videoOffset, layout, scene, work, file: out, thumb, presetStyle: edits });
+      S.saveEdits(id, edits);
       const p = await prepare(clip, work, step);
       const description = describe(clip.title, clip.by, clip.channel, settings.hashtags);
-      const r = await render(clip, p, work, out, { layout, step, post: { title: clip.title, description, tiktok: "" } });
+      const r = await render(clip, p, work, out, { layout, step, edits, post: { title: clip.title, description, tiktok: "" } });
       await run(P.FFMPEG, ["-y", "-ss", thumbAt(r.outDur), "-i", out, "-frames:v", "1", "-vf", "scale=270:-2", thumb], { cwd: work });
       S.update(id, { status: "ready", step: "", seconds: +r.outDur.toFixed(1), trimmed: +r.cut.toFixed(1), chatNotes: r.notes, chatFrom: r.chatFrom, layout: r.layout,
         uploadTitle: clip.title, description, tiktokCaption: "", edits: null });
@@ -523,7 +526,7 @@ function editShort(id) {
   if (!s0 || !s0.work) return Promise.reject(new Error("That Short can't be edited"));
   S.update(id, { status: "queued", step: "Waiting", error: null });
   return enqueue(async () => {
-    const s = S.get(id), edits = S.edits(id), step = stepper(id), settings = S.settings(), th = theme(settings);
+    const s = S.get(id), edits = S.edits(id), step = stepper(id), settings = { ...S.settings(), ...(edits.appearance || {}) }, th = theme(settings);
     try {
       const { clip, p } = await load(s, step);
       const up = edits.upload || {}, text = (v) => typeof v === "string" ? v : null;
@@ -562,11 +565,12 @@ function editShort(id) {
 }
 
 // best of the week: the channel's top clips, each cut to its best ~10 s, joined
-function bestOf(channel, { count = 6, segment = 10 } = {}) {
+function bestOf(channel, { count = 6, segment = 10, style = {} } = {}) {
+  const edits = JSON.parse(JSON.stringify(style));
   const now = new Date(), id = "week-" + now.toISOString().slice(0, 10);
-  S.update(id, { status: "queued", step: "Waiting", kind: "week", title: "Best of the week", channel, error: null });
+  S.update(id, { status: "queued", step: "Waiting", kind: "week", title: "Best of the week", channel, error: null, presetStyle: edits });
   return enqueue(async () => {
-    const step = stepper(id), settings = S.settings(), th = theme(settings);
+    const step = stepper(id), settings = { ...S.settings(), ...(edits.appearance || {}) }, th = theme(settings);
     try {
       await step("Finding the week's clips");
       const pick = (await T.channelClips(channel, "week")).filter((c) => c.duration >= 5).slice(0, count).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -576,7 +580,7 @@ function bestOf(channel, { count = 6, segment = 10 } = {}) {
       for (const [i, c] of pick.entries()) {
         const clip = await T.clip(c.slug), pstep = (x) => step(`Clip ${i + 1} of ${pick.length}: ${x}`), pdir = path.join(work, "part-" + i);
         const p = await prepare(clip, pdir, pstep);
-        const r = await render(clip, p, pdir, path.join(pdir, "part.mp4"), { layout: layoutFor(clip, settings).layout, step: pstep, trim: { ...settings.trim, target: segment, targetMax: segment + 2 }, kicker: "BEST OF THE WEEK", noEditData: true });
+        const r = await render(clip, p, pdir, path.join(pdir, "part.mp4"), { layout: edits.layout || layoutFor(clip, settings).layout, edits, step: pstep, trim: { ...settings.trim, target: segment, targetMax: segment + 2 }, kicker: "BEST OF THE WEEK", noEditData: true });
         parts.push({ file: path.join(pdir, "part.mp4"), dur: r.outDur });
       }
       await step("Joining");
