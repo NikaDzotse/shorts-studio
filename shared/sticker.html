@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; img-src 'self' file: data: blob: https://static-cdn.jtvnw.net; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:">
+<title>Sticker</title>
+<!--
+  One sticker for a Short (see sticker.js). make-short.cjs opens this in headless Chrome, calls setSticker(spec) for
+  each sticker and screenshots it (transparent around it). ?demo=1 shows a few.
+-->
+<style>
+  html, body { margin: 0; background: transparent; }
+  body.demo { background: #444; }
+  #holder { position: absolute; left: 60px; top: 60px; }
+  body.demo #holder { position: static; display: flex; gap: 60px; flex-wrap: wrap; align-items: center; padding: 60px; }
+</style>
+<script src="sticker.js"></script>
+</head>
+<body>
+<div id="holder"></div>
+<script>
+  // returns the sticker's box on the page (rotation, shadow and a little room included), for the screenshot clip
+  window.setSticker = async (spec) => {
+    const holder = document.getElementById("holder");
+    holder.replaceChildren(makeSticker(spec));
+    await Promise.all([...holder.querySelectorAll("img")].map((i) => i.decode().catch(() => {})));
+    await document.fonts.ready;
+    const r = holder.firstChild.getBoundingClientRect();
+    const pad = 24;
+    return { x: Math.floor(r.left - pad), y: Math.floor(r.top - pad), w: Math.ceil(r.width + pad * 2), h: Math.ceil(r.height + pad * 2) };
+  };
+  if (new URLSearchParams(location.search).has("demo")) {
+    document.body.classList.add("demo");
+    const h = document.getElementById("holder");
+    for (const s of [{ kind: "emoji", emoji: "😂", size: 160 }, { kind: "arrow", size: 260, rot: 30 }, { kind: "circle", size: 300 }, { kind: "stamp", text: "EVIDENCE", size: 300, rot: -8 },
+      { kind: "label", text: "EXHIBIT A", size: 260, color: "#ef443b" }]) h.append(makeSticker(s));
+  }
+</script>
+</body>
+</html>

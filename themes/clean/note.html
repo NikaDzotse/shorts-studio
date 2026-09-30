@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; img-src 'self' file: data: blob: https://static-cdn.jtvnw.net; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:">
+<title>Chat bubble (Clean)</title>
+<!--
+  One chat message as a chat bubble, for the "Clean" theme. The Short maker calls setNote({ name, color, role, text,
+  width, parts, accent }) and screenshots the returned box (transparent around it). ?demo=1 shows one.
+-->
+<style>
+  html, body { margin: 0; background: transparent; }
+  body.demo { background: #333; }
+  .note { position: absolute; left: 20px; top: 20px; box-sizing: border-box; padding: 14px 22px 16px; border-radius: 26px; background: rgba(24, 24, 27, .94);
+    box-shadow: 0 10px 24px rgba(0,0,0,.45); color: #efeff1; }
+  .who { display: flex; align-items: center; gap: 10px; font: 800 26px/1.1 "Segoe UI", Arial, sans-serif; margin-bottom: 6px; white-space: nowrap; overflow: hidden; }
+  .who .badge { font-size: 16px; font-weight: 800; color: #fff; padding: 3px 8px; border-radius: 6px; background: #00ad03; letter-spacing: .04em; }
+  .who .badge.vip { background: #e005b9; }
+  .txt { font: 600 32px/1.2 "Segoe UI", Arial, sans-serif; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .txt img.emote { height: 38px; vertical-align: middle; margin: -4px 2px 0; }
+</style>
+</head>
+<body>
+<div class="note" id="note"><div class="who" id="who"></div><div class="txt" id="txt"></div></div>
+<script>
+  window.setNote = async ({ name, color, role, text, width, parts }) => {
+    const n = document.getElementById("note");
+    n.style.width = (width || 600) + "px";
+    const who = document.getElementById("who");
+    who.textContent = "";
+    if (role === 3 || role === 2) who.append(Object.assign(document.createElement("span"), { className: "badge" + (role === 2 ? " vip" : ""), textContent: role === 3 ? "MOD" : "VIP" }));
+    who.append(Object.assign(document.createElement("span"), { textContent: name || "viewer" }));
+    who.lastChild.style.color = color && /^#([0-9a-f]{3}){1,2}$/i.test(color) ? color : "#bf94ff";
+    const txt = document.getElementById("txt");
+    txt.textContent = "";
+    if (Array.isArray(parts) && parts.some((p) => p.e)) {
+      for (const p of parts) txt.append(p.e ? Object.assign(document.createElement("img"), { src: p.e, alt: p.n || "", className: "emote" }) : document.createTextNode(p.t || ""));
+      await Promise.all([...txt.querySelectorAll("img")].map((i) => i.decode().catch(() => i.remove())));
+    } else txt.textContent = text;
+    const r = n.getBoundingClientRect();
+    return { x: Math.floor(r.left - 16), y: Math.floor(r.top - 16), w: Math.ceil(r.width + 32), h: Math.ceil(r.height + 40) };
+  };
+  if (new URLSearchParams(location.search).has("demo")) {
+    document.body.classList.add("demo");
+    setNote({ name: "a_viewer", color: "#8ad", role: 3, text: "no way he just did that", width: 560 });
+  }
+</script>
+</body>
+</html>

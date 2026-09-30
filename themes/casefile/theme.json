@@ -1,0 +1,11 @@
+{
+  "name": "Case File",
+  "description": "Noir detective: case-file cards, an evidence stamp, chat as pinned evidence notes.",
+  "accent": "#ef443b",
+  "series": "CASE FILE",
+  "stamp": "EVIDENCE",
+  "captions": { "hi": "#ef443b", "color": "#ffffff", "style": "classic", "upper": true },
+  "join": { "transition": "slideleft", "sound": "case-file-slam.wav" },
+  "stamps": ["EVIDENCE", "CLASSIFIED", "SUSPECT", "CASE CLOSED"],
+  "labels": ["EXHIBIT A", "EXHIBIT B"]
+}

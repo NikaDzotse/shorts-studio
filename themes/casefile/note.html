@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; img-src 'self' file: data: blob: https://static-cdn.jtvnw.net; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:">
+<title>Chat note</title>
+<!--
+  One chat message as an evidence note, for the Shorts. make-short.cjs opens this in headless Chrome, calls
+  setNote({name, color, role, text, width}) for each message and screenshots the note (transparent around it).
+  Open with ?demo=1 to see one.
+-->
+<style>
+  html, body { margin: 0; background: transparent; }
+  body.demo { background: #333; padding: 40px; }
+  .note { position: absolute; left: 20px; top: 20px; box-sizing: border-box; padding: 14px 20px 16px 22px;
+    background: #16181d; border: 2px solid #2d313b; border-left: 6px solid #ef443b; border-radius: 10px;
+    box-shadow: 0 10px 26px rgba(0,0,0,.55); color: #ebe5d8; transform: rotate(-1deg); }
+  .note.mod { border-left-color: #6aa8ff; } .note.vip { border-left-color: #e3a948; }
+  .who { font: 700 26px/1.1 "Courier New", monospace; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who small { font-size: 18px; color: #8d919b; margin-left: 8px; letter-spacing: .12em; }
+  .txt { font: 700 34px/1.18 "Segoe UI", "Arial", sans-serif; word-break: break-word;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .txt img.emote { height: 40px; vertical-align: middle; margin: -4px 2px 0; }
+  .pin { position: absolute; top: -9px; left: 50%; width: 18px; height: 18px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ff8a82, #9e1f18); box-shadow: 0 2px 4px rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+<div class="note" id="note"><div class="pin"></div><div class="who" id="who"></div><div class="txt" id="txt"></div></div>
+<script>
+  // returns the note's box on the page, for the screenshot clip
+  // parts (from the VOD chat replay): [{ t: "text" } | { e: emoteImageUrl, n: name }] - emotes show as pictures
+  window.setNote = async ({ name, color, role, text, width, parts, accent }) => {
+    const n = document.getElementById("note");
+    n.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(accent || "") && role !== 3 && role !== 2 ? accent : "";   // mods and VIPs keep their colours
+    n.className = "note" + (role === 3 ? " mod" : role === 2 ? " vip" : "");
+    n.style.width = (width || 600) + "px";
+    const who = document.getElementById("who");
+    who.textContent = name || "viewer";
+    who.style.color = color && /^#([0-9a-f]{3}){1,2}$/i.test(color) ? color : "#ebe5d8";
+    if (role === 3 || role === 2) who.append(Object.assign(document.createElement("small"), { textContent: role === 3 ? "MOD" : "VIP" }));
+    const txt = document.getElementById("txt");
+    txt.textContent = "";
+    if (Array.isArray(parts) && parts.some((p) => p.e)) {
+      for (const p of parts) txt.append(p.e ? Object.assign(document.createElement("img"), { src: p.e, alt: p.n || "", className: "emote" }) : document.createTextNode(p.t || ""));
+      await Promise.all([...txt.querySelectorAll("img")].map((i) => i.decode().catch(() => i.remove())));   // a missing emote just drops out
+    } else txt.textContent = text;
+    const r = n.getBoundingClientRect();
+    // room for the rotation, the pin and the shadow
+    return { x: Math.floor(r.left - 16), y: Math.floor(r.top - 16), w: Math.ceil(r.width + 32), h: Math.ceil(r.height + 40) };
+  };
+  if (new URLSearchParams(location.search).has("demo")) {
+    document.body.classList.add("demo");
+    setNote({ name: "a_viewer", color: "#8ad", role: 3, text: "did anyone check the green folder??", width: 600 });
+  }
+</script>
+</body>
+</html>

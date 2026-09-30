@@ -1,0 +1,14 @@
+Sounds that come with Shorts Studio
+===================================
+
+Made for Shorts Studio (free to use in your videos, no credit needed):
+  boom, bleep, record-scratch, dun-dun-dunnn, sad-trombone, rimshot, riser        (sound effects)
+  noir-drone, tension-pulse                                                      (music)
+  case-file-slam: a paper hit (below, CC0) with a made thump
+
+From BigSoundBank.com by Joseph SARDIN, CC0 1.0 (public domain):
+  typewriter-key (ID 2842), typewriter-bell (2844), typewriter-typing (1065), projector (2823),
+  camera-flash (3022), door-knock (0095), lamp-switch (0036), paper (0785), pencil (0221),
+  heartbeat (0243), whoosh (0572), rain-on-the-window (1295, first 45 s), bar-crowd (0684, first 45 s)
+
+Add your own in Settings > Library (your files stay on your PC).

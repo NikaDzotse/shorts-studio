@@ -1,0 +1,11 @@
+{
+  "name": "Clean",
+  "description": "Simple and modern: a title bar, your channel in a pill, chat as chat bubbles.",
+  "accent": "#9147ff",
+  "series": "",
+  "stamp": "",
+  "captions": { "hi": "#ffd23f", "color": "#ffffff", "style": "punch", "upper": false },
+  "join": { "transition": "fade", "sound": "whoosh.wav" },
+  "stamps": ["NO WAY", "CLIP IT", "W", "L"],
+  "labels": ["PART 1", "PART 2"]
+}

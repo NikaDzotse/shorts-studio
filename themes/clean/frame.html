@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; img-src 'self' file: data: blob: https://static-cdn.jtvnw.net; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:">
+<title>Short frame (Clean)</title>
+<!--
+  The "Clean" theme's frame for a Short (1080x1920, transparent where the video shows): a title bar at the top and
+  your channel in a pill at the bottom. Same parameters as every theme's frame.html:
+    title sub kicker date chan byline stamp accent tsize hy fy nohead nofoot only(head|foot) zones demo
+  and postMessage({ cards: { head, foot } }) from the editor's preview.
+  Safe zones: TikTok and YouTube cover the top ~200 px, the right ~180 px and the bottom ~420 px; text stays in
+  x 60-900, y 220-1500. The video band is y 150-1650.
+-->
+<style>
+  :root { --accent: #9147ff; --bg: #0e0e10; }
+  html, body { margin: 0; width: 1080px; height: 1920px; background: transparent; overflow: hidden; }
+  body.demo { background: repeating-linear-gradient(45deg, #444 0 20px, #555 20px 40px); }
+  .strip { position: absolute; left: 0; right: 0; background: var(--bg); }
+  .strip.top { top: 0; height: 150px; }
+  .strip.bottom { bottom: 0; height: 270px; }
+  .head { position: absolute; left: 60px; width: 840px; top: 222px; box-sizing: border-box; padding: 18px 26px 22px; border-radius: 26px;
+    background: rgba(14, 14, 16, .72); backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .kicker { display: flex; gap: 12px; align-items: center; font: 800 24px/1 "Segoe UI", Arial, sans-serif; letter-spacing: .04em; color: #efeff1; }
+  .kicker #kicker { background: var(--accent); color: #fff; padding: 6px 12px; border-radius: 999px; }
+  .kicker #date { color: #adadb8; font-weight: 600; }
+  .kicker span:empty { display: none; }
+  .title { margin-top: 12px; font: 800 60px/1.08 "Segoe UI", Arial, sans-serif; color: #fff; white-space: pre-line;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .title.long { font-size: 48px; }
+  .title.sized { -webkit-line-clamp: 4; }
+  .sub { margin-top: 8px; font: 600 32px/1.2 "Segoe UI", Arial, sans-serif; color: #dedee3; white-space: pre-line; }
+  .sub:empty { display: none; }
+  .foot { position: absolute; left: 60px; top: 1400px; width: 840px; display: flex; align-items: center; gap: 16px; }
+  .pill { display: flex; flex-direction: column; gap: 6px; padding: 14px 26px 16px 22px; border-radius: 28px; background: rgba(14, 14, 16, .78); box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: 640px; }
+  .chan { display: flex; align-items: center; gap: 12px; font: 800 38px/1 "Segoe UI", Arial, sans-serif; color: #fff; }
+  .chan::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); flex: none; box-shadow: 0 0 0 5px rgba(255,255,255,.12); }
+  .chan b { color: #fff; }
+  .by { font: 600 24px/1.2 "Segoe UI", Arial, sans-serif; color: #adadb8; padding-left: 30px; }
+  .stamp { font: 800 24px/1 "Segoe UI", Arial, sans-serif; letter-spacing: .06em; color: #fff; background: var(--accent); padding: 12px 18px; border-radius: 999px; text-transform: uppercase; }
+  .zones .z { position: absolute; background: rgba(0, 200, 255, .28); border: 2px dashed #0cf; box-sizing: border-box; }
+</style>
+</head>
+<body>
+  <div class="strip top"></div>
+  <div class="head card">
+    <div class="kicker"><span id="kicker"></span><span id="date"></span></div>
+    <div class="title" id="title"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="foot card">
+    <div class="pill"><div class="chan" id="chan">twitch.tv/<b>yourchannel</b></div><div class="by" id="by"></div></div>
+    <div class="stamp" id="stamp"></div>
+  </div>
+  <div class="strip bottom"></div>
+  <div class="zones" id="zones" hidden>
+    <div class="z" style="left:0;top:0;width:1080px;height:200px"></div>
+    <div class="z" style="left:900px;top:200px;width:180px;height:1300px"></div>
+    <div class="z" style="left:0;top:1500px;width:1080px;height:420px"></div>
+  </div>
+<script>
+  const q = new URLSearchParams(location.search);
+  // everything can also come as one JSON parameter, d (Electron won't load a local page whose URL has an empty parameter)
+  if (q.has("d")) { try { for (const [k, v] of Object.entries(JSON.parse(q.get("d")))) q.set(k, String(v)); } catch (e) { /* ignore a bad d */ } q.delete("d"); }
+  if (/^#[0-9a-f]{6}$/i.test(q.get("accent") || "")) document.documentElement.style.setProperty("--accent", q.get("accent"));
+  if (q.has("demo")) { document.body.classList.add("demo"); if (!q.get("title")) q.set("title", "He did NOT see that coming"); if (!q.get("by")) q.set("by", "a viewer"); if (!q.get("date")) q.set("date", "30 Sep"); }
+  if (q.has("zones")) document.getElementById("zones").hidden = false;
+  const title = q.get("title") || "Clip";
+  const t = document.getElementById("title"); t.textContent = title;
+  if (+q.get("tsize") > 0) { t.style.fontSize = Math.max(24, Math.min(110, +q.get("tsize"))) + "px"; t.classList.add("sized"); } else if (title.length > 26) t.classList.add("long");
+  document.getElementById("sub").textContent = q.get("sub") || "";
+  document.getElementById("kicker").textContent = q.get("kicker") || "";
+  document.getElementById("date").textContent = q.get("date") || "";
+  document.getElementById("by").textContent = q.has("byline") ? q.get("byline") : q.get("by") ? "clipped by " + q.get("by") : "";
+  const stamp = document.getElementById("stamp"); stamp.textContent = q.get("stamp") || ""; stamp.hidden = !stamp.textContent.trim();
+  if (q.has("chan")) { const c = q.get("chan"), el = document.getElementById("chan"); el.textContent = c; }
+  const head = document.querySelector(".head"), foot = document.querySelector(".foot");
+  if (q.get("hy") && Number.isFinite(+q.get("hy"))) head.style.top = +q.get("hy") + "px";
+  if (q.get("fy") && Number.isFinite(+q.get("fy"))) foot.style.top = +q.get("fy") + "px";
+  if (q.has("nohead")) head.hidden = true;
+  if (q.has("nofoot")) foot.hidden = true;
+  const only = q.get("only");
+  if (only === "head" || only === "foot") { for (const e of document.querySelectorAll(".strip, .zones")) e.hidden = true; (only === "head" ? foot : head).hidden = true; }
+  const noHead = q.has("nohead"), noFoot = q.has("nofoot");
+  window.addEventListener("message", (e) => { const c = e.data && e.data.cards; if (!c) return; head.hidden = noHead || !c.head; foot.hidden = noFoot || !c.foot; });
+</script>
+</body>
+</html>

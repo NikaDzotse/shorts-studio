@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; img-src 'self' file: data: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv; media-src 'self' file:; style-src 'self' 'unsafe-inline' file:; script-src 'self' file:; frame-src file:">
+<title>Shorts Studio</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="bar">
+  <div class="brand"><span class="logo">▮</span> Shorts Studio</div>
+  <button id="channel-chip" class="chip" title="Your channel (Settings)"></button>
+  <span class="grow"></span>
+  <span id="busy" class="busy" hidden></span>
+  <button id="open-videos" class="ghost" title="The folder your Shorts are saved in">📁 Your Shorts folder</button>
+  <button id="open-settings">⚙ Settings</button>
+</header>
+
+<main id="home">
+  <section id="clips-col" class="card">
+    <div class="col-head">
+      <h2>Your clips</h2>
+      <div class="seg" id="range">
+        <button data-r="day">Today</button><button data-r="week" class="on">This week</button><button data-r="month">This month</button><button data-r="all">All time</button>
+      </div>
+      <span class="grow"></span>
+      <button id="reload" class="ghost" title="Ask Twitch again">↻</button>
+    </div>
+    <div id="clips" class="clips"></div>
+    <div class="clips-foot">
+      <button id="make-selected" class="primary" disabled>Make Shorts</button>
+      <button id="best-of" title="The week's top clips, each cut to its best ~10 s, joined into one Short">Best of the week</button>
+      <span class="grow"></span>
+      <details id="paste">
+        <summary>Paste clip links</summary>
+        <textarea id="links" rows="3" placeholder="https://clips.twitch.tv/... (one per line, any channel)"></textarea>
+        <button id="make-links" class="primary">Make Shorts from these</button>
+      </details>
+    </div>
+  </section>
+
+  <section id="shorts-col" class="card">
+    <div class="col-head"><h2>Your Shorts</h2><span class="grow"></span><span id="shorts-count" class="hint"></span></div>
+    <div id="shorts" class="shorts"></div>
+  </section>
+</main>
+
+<!-- first run -->
+<div id="welcome" class="overlay" hidden>
+  <div class="dialog wide">
+    <h1>Welcome to Shorts Studio</h1>
+    <p class="hint">It turns your Twitch clips into vertical Shorts for YouTube and TikTok: trimmed, with captions, your chat, and your look. Everything runs on your PC.</p>
+    <label class="field">Your Twitch channel<input id="w-channel" placeholder="yourchannel" autocomplete="off"></label>
+    <div class="field">Pick a look (you can change it any time)<div id="w-themes" class="themes"></div></div>
+    <div class="field">Captions need a speech model (a one-time download)
+      <div class="row"><select id="w-model"><option value="base">Standard, 148 MB (fast)</option><option value="small">Best, 466 MB (better captions, slower)</option></select>
+        <span id="w-model-state" class="hint"></span></div>
+      <div class="progress" hidden><i></i></div>
+    </div>
+    <div class="row end"><button id="w-start" class="primary">Start</button></div>
+  </div>
+</div>
+
+<!-- settings -->
+<div id="settings" class="overlay" hidden>
+  <div class="dialog wide">
+    <div class="row"><h1>Settings</h1><span class="grow"></span><button class="ghost close" data-close="settings">✕</button></div>
+    <div id="settings-body" class="settings"></div>
+  </div>
+</div>
+
+<!-- upload helper -->
+<div id="upload" class="overlay" hidden>
+  <div class="dialog">
+    <div class="row"><h1 id="up-title">Upload</h1><span class="grow"></span><button class="ghost close" data-close="upload">✕</button></div>
+    <div id="upload-body"></div>
+  </div>
+</div>
+
+<!-- player -->
+<div id="player" class="overlay" hidden><div class="player"><video id="player-video" controls></video><button class="ghost close" data-close="player">✕ Close</button></div></div>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

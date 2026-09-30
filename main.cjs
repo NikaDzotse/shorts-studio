@@ -1,0 +1,134 @@
+"use strict";
+// Shorts Studio: the app. Opens the main window (your clips and Shorts) and editor windows, and answers them through
+// the preload bridge (window.studio). The work happens in engine\.
+const { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, screen } = require("electron");
+const fs = require("fs");
+const path = require("path");
+
+// tests: SHORTS_STUDIO_DATA uses a throwaway data folder, SHORTS_STUDIO_HIDDEN keeps the windows off the screen
+if (process.env.SHORTS_STUDIO_DATA) app.setPath("userData", process.env.SHORTS_STUDIO_DATA);
+const HIDDEN = !!process.env.SHORTS_STUDIO_HIDDEN;
+if (!app.requestSingleInstanceLock()) { app.quit(); } else {
+  app.on("second-instance", () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+}
+
+const P = require("./engine/paths.cjs");
+const S = require("./engine/store.cjs");
+const M = require("./engine/make.cjs");
+const T = require("./engine/twitch.cjs");
+const Wh = require("./engine/whisper.cjs");
+const LIB = require("./engine/library.cjs");
+const OBS = require("./engine/obs.cjs");
+const { log, LOG } = require("./engine/run.cjs");
+
+let main = null;
+const editors = new Map();
+const PRELOAD = path.join(__dirname, "preload.cjs");
+const ICON = path.join(__dirname, "build", "icon.png");
+const webPreferences = { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true };
+
+function createMain() {
+  main = new BrowserWindow({ width: 1320, height: 880, minWidth: 900, minHeight: 620, backgroundColor: "#0d0e11", title: "Shorts Studio", icon: fs.existsSync(ICON) ? ICON : undefined, webPreferences, show: false });
+  main.once("ready-to-show", () => reveal(main));
+  main.loadFile(path.join(__dirname, "ui", "index.html"));
+  main.on("closed", () => { main = null; for (const w of editors.values()) if (!w.isDestroyed()) w.close(); });
+  guard(main);
+}
+function openEditor(id) {
+  const open = editors.get(id);
+  if (open && !open.isDestroyed()) { open.focus(); return; }
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  const w = new BrowserWindow({ width: Math.min(1680, area.width), height: Math.min(1000, area.height), minWidth: 1100, minHeight: 700, backgroundColor: "#0d0e11",
+    title: "Edit", icon: fs.existsSync(ICON) ? ICON : undefined, webPreferences, show: false });
+  w.once("ready-to-show", () => reveal(w));
+  w.loadFile(path.join(__dirname, "ui", "editor.html"), { query: { id } });
+  w.on("closed", () => editors.delete(id));
+  // the editor says "not yet" while it has unsaved changes; Electron shows nothing by itself, so ask here
+  w.webContents.on("will-prevent-unload", (e) => {
+    const r = dialog.showMessageBoxSync(w, { type: "question", buttons: ["Close without saving", "Keep editing"], defaultId: 1, cancelId: 1, message: "You have changes that aren't saved", detail: "Save & rebuild keeps them." });
+    if (r === 0) e.preventDefault();
+  });
+  editors.set(id, w);
+  guard(w);
+}
+// tests: shown (so it paints) but off the screen, see-through, click-through and not on the taskbar
+function reveal(w) {
+  if (!HIDDEN) return w.show();
+  w.setSkipTaskbar(true); w.setIgnoreMouseEvents(true); w.setOpacity(0); w.setFocusable(false); w.setPosition(-20000, -20000); w.showInactive();
+}
+// links open in the browser, never inside the app
+function guard(w) {
+  w.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: "deny" }; });
+  w.webContents.on("will-navigate", (e, url) => { if (!url.startsWith("file:")) { e.preventDefault(); if (/^https:\/\//.test(url)) shell.openExternal(url); } });
+}
+const send = (ch, data) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(ch, data); };
+S.events.on("change", (item) => send("studio:shorts", item));
+S.events.on("settings", (s) => send("studio:settings", s));
+
+// ---------- what the windows can ask for ----------
+const handle = (name, fn) => ipcMain.handle("studio:" + name, async (e, ...args) => {
+  try { return { ok: true, value: await fn(...args) }; } catch (err) { log("ipc", name, err.message); return { ok: false, error: err.message }; }
+});
+handle("settings", () => S.settings());
+handle("saveSettings", (patch) => S.saveSettings(patch || {}));
+handle("themes", () => fs.readdirSync(P.THEMES).filter((d) => fs.existsSync(path.join(P.THEMES, d, "theme.json")))
+  .map((id) => ({ id, ...JSON.parse(fs.readFileSync(path.join(P.THEMES, id, "theme.json"), "utf8")), frame: path.join(P.THEMES, id, "frame.html") })));
+handle("clips", (channel, range) => T.channelClips(channel, range));
+handle("make", (links) => {
+  const ids = [];
+  for (const l of links || []) { const slug = T.slugFrom(l); if (!slug) continue; ids.push("c-" + slug.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60)); M.makeShort(slug).catch(() => {}); }
+  if (!ids.length) throw new Error("No Twitch clip links in there");
+  return ids;
+});
+handle("bestOf", (channel) => { M.bestOf(channel || S.settings().channel).catch(() => {}); return true; });
+handle("shorts", () => S.list());
+handle("editData", (id) => ({ item: S.get(id), data: M.editData(id) }));
+handle("saveEdit", (id, edits) => { S.saveEdits(id, edits); M.editShort(id).catch(() => {}); return true; });
+handle("remake", (id) => { const s = S.get(id); if (!s) throw new Error("No such Short"); if (s.kind === "week") M.bestOf(s.channel).catch(() => {}); else M.makeShort(s.slug).catch(() => {}); return true; });
+handle("remove", async (id) => {
+  const s = S.get(id);
+  // into the Recycle Bin, never deleted for good
+  if (s) for (const f of [s.file, s.thumb, s.work]) if (f && fs.existsSync(f)) { try { await shell.trashItem(f); } catch (e) { log("trash", e.message); } }
+  S.remove(id);
+  return true;
+});
+handle("reveal", (file) => { if (file && fs.existsSync(file)) shell.showItemInFolder(file); return true; });
+handle("openFolder", (which) => {
+  const dir = which === "videos" ? S.outDir() : which === "log" ? path.dirname(LOG) : path.join(P.LIBRARY, ["sfx", "music", "stickers", "emotes"].includes(which) ? which : "");
+  fs.mkdirSync(dir, { recursive: true }); return shell.openPath(dir);
+});
+const UPLOAD = { youtube: "https://www.youtube.com/upload", tiktok: "https://www.tiktok.com/tiktokstudio/upload", twitch: "https://www.twitch.tv/" };
+handle("openUpload", (where) => { if (!UPLOAD[where]) throw new Error("Unknown place"); return shell.openExternal(UPLOAD[where]); });
+handle("openLink", (url) => { if (!/^https:\/\/([a-z0-9-]+\.)*(twitch\.tv|youtube\.com|tiktok\.com|github\.com)\//i.test(url)) throw new Error("Not allowed"); return shell.openExternal(url); });
+handle("copy", (text) => { clipboard.writeText(String(text || "")); return true; });
+handle("openEditor", (id) => { openEditor(id); return true; });
+handle("library", () => LIB.index());
+handle("model", () => { const s = S.settings(); return { name: s.model, has: Wh.hasModel(s.model), mb: Wh.MODELS[s.model].mb, models: Wh.MODELS }; });
+let downloading = null;
+handle("downloadModel", (name) => {
+  if (downloading) return downloading;
+  downloading = Wh.download(name || S.settings().model, (f) => send("studio:model", { name, progress: f }))
+    .then(() => { send("studio:model", { name, progress: 1, done: true }); return true; })
+    .catch((e) => { send("studio:model", { name, error: e.message }); throw e; })
+    .finally(() => { downloading = null; });
+  return downloading;
+});
+handle("obs", () => ({ available: OBS.available(), scenes: OBS.scenes() }));
+handle("emotes", () => T.emotes(S.settings().channel));
+handle("chooseFolder", async () => { const r = await dialog.showOpenDialog(main, { properties: ["openDirectory", "createDirectory"] }); return r.canceled ? null : r.filePaths[0]; });
+handle("version", () => app.getVersion());
+handle("busy", () => M.busy());
+
+app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+  createMain();
+  app.on("activate", () => { if (!main) createMain(); });
+});
+app.on("window-all-closed", () => app.quit());
+app.on("before-quit", (e) => {
+  if (M.busy() && main && !app.__asked) {
+    const r = dialog.showMessageBoxSync(main, { type: "question", buttons: ["Quit anyway", "Keep working"], defaultId: 1, message: "A Short is still being made", detail: "Quitting stops it. You can make it again later." });
+    if (r === 1) { e.preventDefault(); return; }
+    app.__asked = true;
+  }
+});

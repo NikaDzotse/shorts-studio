@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data:; img-src 'self' file: data: blob: https://static-cdn.jtvnw.net; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:">
+<title>Short frame</title>
+<!--
+  The frame burned onto every Short (1080x1920, transparent where the video shows). make-short.cjs screenshots it in
+  headless Chrome with ?title=&by=&date=&kicker=&stamp= (&nohead=1 / &nofoot=1 leave a card off; the editor also
+  sends &sub= a line under the title, &tsize= title px, &hy= / &fy= the cards' tops, &chan= the channel line,
+  &byline= the whole "clipped by" line). Open it in a browser with ?demo=1 (add &zones=1 to see the
+  areas TikTok and YouTube cover with their own buttons and text).
+
+  Safe zones: TikTok and YouTube Shorts put their UI over the top ~200 px, the right ~180 px (like, comment, share)
+  and the bottom ~420 px (caption, sound, channel). Everything that must be read sits in x 60-900, y 220-1500.
+  The video band is y 150-1650; the strips above and below it are only decoration.
+-->
+<style>
+  :root { --red: #ef443b; --ink: #ebe5d8; --muted: #a2a6b0; --bg: #0d0e11; }
+  html, body { margin: 0; width: 1080px; height: 1920px; background: transparent; overflow: hidden; }
+  body.demo { background: repeating-linear-gradient(45deg, #444 0 20px, #555 20px 40px); }
+  .strip { position: absolute; left: 0; right: 0; background: var(--bg); }
+  .strip.top { top: 0; height: 150px; border-bottom: 3px solid var(--red); }
+  .strip.bottom { bottom: 0; height: 270px; border-top: 3px solid var(--red); }
+  .card { position: absolute; left: 60px; width: 840px; box-sizing: border-box; border-radius: 14px;
+    background: rgba(13, 14, 17, .82); box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  .head { top: 222px; padding: 16px 26px 20px; border-left: 6px solid var(--red); }
+  .kicker { font: 700 26px/1 "Courier New", monospace; letter-spacing: .26em; color: var(--red); display: flex; justify-content: space-between; }
+  .kicker span:last-child { color: var(--muted); letter-spacing: .1em; }
+  .title { margin-top: 12px; font: 900 56px/1.04 "Arial Black", "Segoe UI Black", sans-serif; text-transform: uppercase; color: #fff; white-space: pre-line;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .title.long { font-size: 44px; }
+  .title.sized { -webkit-line-clamp: 4; }
+  .sub { margin-top: 10px; font: 700 30px/1.18 "Segoe UI", Arial, sans-serif; color: #d9d4c8; white-space: pre-line; }
+  .sub:empty, .kicker span:empty { display: none; }
+  .foot { top: 1400px; min-height: 100px; padding: 14px 26px 16px; }
+  .chan { font: 900 40px/1 "Arial Black", sans-serif; color: #fff; }
+  .chan b { color: var(--red); }
+  .by { margin-top: 10px; font: 700 24px/1.2 "Courier New", monospace; color: var(--muted); letter-spacing: .06em; }
+  .stamp { position: absolute; right: 22px; top: 22px; transform: rotate(-7deg); border: 4px solid var(--red); color: var(--red);
+    padding: 8px 14px 6px; font: 900 26px/1 "Courier New", monospace; letter-spacing: .14em; border-radius: 6px; }
+  .zones .z { position: absolute; background: rgba(0, 200, 255, .28); border: 2px dashed #0cf; box-sizing: border-box; }
+</style>
+</head>
+<body>
+  <div class="strip top"></div>
+  <div class="card head">
+    <div class="kicker"><span id="kicker">CASE FILE</span><span id="date"></span></div>
+    <div class="title" id="title"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="card foot">
+    <div class="chan" id="chan">twitch.tv/<b>yourchannel</b></div>
+    <div class="by" id="by"></div>
+    <div class="stamp" id="stamp">EVIDENCE</div>
+  </div>
+  <div class="strip bottom"></div>
+  <div class="zones" id="zones" hidden>
+    <div class="z" style="left:0;top:0;width:1080px;height:200px"></div>
+    <div class="z" style="left:900px;top:200px;width:180px;height:1300px"></div>
+    <div class="z" style="left:0;top:1500px;width:1080px;height:420px"></div>
+  </div>
+<script>
+  const q = new URLSearchParams(location.search);
+  // everything can also come as one JSON parameter, d (Electron won't load a local page whose URL has an empty parameter)
+  if (q.has("d")) { try { for (const [k, v] of Object.entries(JSON.parse(q.get("d")))) q.set(k, String(v)); } catch (e) { /* ignore a bad d */ } q.delete("d"); }
+  if (/^#[0-9a-f]{6}$/i.test(q.get("accent") || "")) document.documentElement.style.setProperty("--red", q.get("accent"));
+  if (q.has("demo")) { document.body.classList.add("demo"); if (!q.get("title")) q.set("title", "The suspect panicked"); if (!q.get("by")) q.set("by", "a viewer"); if (!q.get("date")) q.set("date", "29.09.2026"); }
+  if (q.has("zones")) document.getElementById("zones").hidden = false;
+  const title = q.get("title") || "Case file";
+  const t = document.getElementById("title"); t.textContent = title;
+  // tsize: your own title size; otherwise long titles get smaller by themselves
+  if (+q.get("tsize") > 0) { t.style.fontSize = Math.max(24, Math.min(110, +q.get("tsize"))) + "px"; t.classList.add("sized"); } else if (title.length > 26) t.classList.add("long");
+  document.getElementById("sub").textContent = q.get("sub") || "";
+  document.getElementById("kicker").textContent = q.has("kicker") ? q.get("kicker") : "CASE FILE";
+  document.getElementById("date").textContent = q.get("date") || "";
+  // byline: the whole bottom line as typed; by: just the clipper's name (older calls)
+  document.getElementById("by").textContent = q.has("byline") ? q.get("byline") : q.get("by") ? "clipped by " + q.get("by") : "live on Twitch";
+  document.getElementById("stamp").textContent = q.has("stamp") ? q.get("stamp") : "EVIDENCE";
+  document.getElementById("stamp").hidden = !document.getElementById("stamp").textContent.trim();
+  // chan: the channel line; whatever follows its last "/" is in red (twitch.tv/<red>yourchannel</red>)
+  if (q.has("chan")) {
+    const c = q.get("chan"), cut = c.lastIndexOf("/") + 1, el = document.getElementById("chan");
+    el.textContent = c.slice(0, cut);
+    if (c.slice(cut)) el.append(Object.assign(document.createElement("b"), { textContent: c.slice(cut) }));
+  }
+  // the bottom card's lines stop short of the stamp (a long "clipped by" line wraps instead of running under it)
+  const stampEl = document.getElementById("stamp");
+  if (!stampEl.hidden) { const w = Math.ceil(stampEl.getBoundingClientRect().width) + 8; for (const e of document.querySelectorAll(".foot .chan, .foot .by")) e.style.marginRight = w + "px"; }
+  // only=head / only=foot: just that card, nothing else (a card shown only part of the time is its own picture)
+  const only = q.get("only");
+  if (only === "head" || only === "foot") {
+    for (const e of document.querySelectorAll(".strip, .zones")) e.hidden = true;
+    document.querySelector(only === "head" ? ".foot" : ".head").hidden = true;
+  }
+  // the editor's preview shows and hides the cards as it plays (postMessage { cards: { head, foot } })
+  const noHead = q.has("nohead"), noFoot = q.has("nofoot");
+  window.addEventListener("message", (e) => {
+    const c = e.data && e.data.cards; if (!c) return;
+    document.querySelector(".head").hidden = noHead || !c.head;
+    document.querySelector(".foot").hidden = noFoot || !c.foot;
+  });
+  // hy / fy: where the title card and the bottom card sit
+  if (q.get("hy") && Number.isFinite(+q.get("hy"))) document.querySelector(".head").style.top = +q.get("hy") + "px";
+  if (q.get("fy") && Number.isFinite(+q.get("fy"))) document.querySelector(".foot").style.top = +q.get("fy") + "px";
+  // the editor can leave either card off (when it would cover something)
+  if (q.has("nohead")) document.querySelector(".head").hidden = true;
+  if (q.has("nofoot")) document.querySelector(".foot").hidden = true;
+</script>
+</body>
+</html>

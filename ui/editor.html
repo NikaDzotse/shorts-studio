@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; img-src 'self' file: data: blob:; media-src 'self' file: blob:; style-src 'self' 'unsafe-inline' file:; script-src 'self' file:; frame-src file:; connect-src 'self' file: blob: data:">
+<title>Short editor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<!-- The big Short editor; the main window opens one per Short (editor.html?id=<short id>). The waveform timeline is
+     wavesurfer.js (vendor/wavesurfer, BSD-3). See editor.js for what everything does. -->
+<header id="bar">
+  <button id="close" class="ghost" title="Close the editor">&#10005;</button>
+  <div class="ttl"><span class="kick">EDIT</span><b id="name">Loading...</b><span id="meta"></span></div>
+  <span class="grow"></span>
+  <span id="status"></span>
+  <button id="watch" hidden title="Watch the Short as it is now">&#9654; Watch result</button>
+  <button id="undo" title="Undo (Ctrl+Z)">&#8630;</button>
+  <button id="redo" title="Redo (Ctrl+Y)">&#8631;</button>
+  <button id="revert" title="Throw away the changes since you opened it">Revert</button>
+  <button id="save" class="primary" title="Ctrl+S">Save &amp; rebuild</button>
+</header>
+
+<main id="ed">
+  <section id="source-col" class="card">
+    <div class="col-head"><h2>Source clip</h2><span class="hint">Drag the boxes to choose what goes in the Short. Corners resize.</span></div>
+    <div id="stage-wrap"><div id="src"><video id="video" preload="auto" playsinline></video><div id="boxes"></div><div id="cutflag" hidden>CUT &middot; not in the Short</div></div></div>
+    <div id="transport">
+      <button id="play" class="primary" title="Space">&#9654;</button>
+      <button id="back5" title="Back 1 s (Shift+Left)">-1s</button>
+      <button id="fwd5" title="Forward 1 s (Shift+Right)">+1s</button>
+      <span id="tc" class="mono">0:00.00</span>
+      <label class="check" title="Jump over the parts that are cut, like the finished Short"><input type="checkbox" id="skipcuts" checked> Play like the Short</label>
+      <span class="grow"></span>
+      <label class="check">Speed <select id="rate"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label>
+    </div>
+  </section>
+
+  <section id="preview-col" class="card">
+    <div class="col-head"><h2>Short</h2><span class="grow"></span><span id="pvtime" class="mono hint"></span></div>
+    <div id="pv-wrap"><div id="pv">
+      <canvas id="pv-canvas" width="540" height="960"></canvas>
+      <div id="pv-notes" class="layer"></div>
+      <iframe id="pv-frame" tabindex="-1" title="Frame"></iframe>
+      <div id="pv-text" class="layer"></div>
+    </div></div>
+    <div class="pv-foot">
+      <label class="check" title="The areas TikTok and YouTube cover with their own buttons and text"><input type="checkbox" id="zones"> App button zones</label>
+      <span class="hint">Drag captions, notes, text and the picture here.</span>
+    </div>
+  </section>
+
+  <aside id="insp" class="card">
+    <nav id="itabs">
+      <button data-t="look" class="active" title="Layout, crops, sizes, sound">Look</button>
+      <button data-t="title" title="Title, subtitle, top line, date and the bottom card">Title</button>
+      <button data-t="captions" title="The captions: their words, timing and look">Captions</button>
+      <button data-t="chat" title="Chat messages as notes on the Short">Chat</button>
+      <button data-t="text" title="Your own text on the Short">Text</button>
+      <button data-t="stickers" title="Emoji, your emotes, arrows, circles, stamps">Stickers</button>
+      <button data-t="fx" title="Zoom, slow motion, freeze frames">FX</button>
+      <button data-t="sound" title="Your volume, bleeps, sound effects, music">Sound</button>
+      <button data-t="post" title="Title, description and caption for YouTube and TikTok">Post</button>
+    </nav>
+    <div id="ipane"></div>
+  </aside>
+
+  <section id="tl-col" class="card">
+    <div id="tl-bar">
+      <span class="lbl" title="On the Text track a drag makes a new text box; on a card's track it sets when the card shows">Drag across Video or Sound to</span>
+      <div class="seg" id="dragmode"><button data-m="keep" class="on" title="Drag across the waveform to keep that part">keep</button><button data-m="cut" title="Drag across the waveform to cut that part out">cut</button></div>
+      <button id="split" title="Split the kept part at the playhead (S)">&#9986; Split</button>
+      <button id="del" title="Delete what's selected (Delete)">Delete</button>
+      <button id="tb-zoom" title="Zoom in at the playhead (Z)">&#128269; Zoom</button>
+      <button id="tb-freeze" title="Freeze frame at the playhead (F)">&#10052; Freeze</button>
+      <button id="tb-slow" title="Slow motion from the playhead">&#128034; Slow</button>
+      <button id="tb-bleep" title="Bleep the word at the playhead (B)">&#128263; Bleep</button>
+      <button id="autotrim" title="What smart trim picked">Smart trim</button>
+      <button id="keepall" title="Keep the whole clip">Keep all</button>
+      <span class="grow"></span>
+      <span id="outlen" class="mono"></span>
+      <label class="check">Zoom <input type="range" id="zoom" min="0" max="100" value="0"></label>
+    </div>
+    <div id="tl">
+      <div id="lanes"></div>
+      <div id="wave"></div>
+    </div>
+  </section>
+</main>
+<div id="modal" hidden><div class="mbox"><video id="result" controls></video><button id="modal-close">Close</button></div></div>
+<div id="toast"></div>
+
+<script src="../shared/sticker.js"></script>
+<script src="vendor/wavesurfer/wavesurfer.min.js"></script>
+<script src="vendor/wavesurfer/regions.min.js"></script>
+<script src="vendor/wavesurfer/timeline.min.js"></script>
+<script src="vendor/wavesurfer/zoom.min.js"></script>
+<script src="editor.js"></script>
+</body>
+</html>

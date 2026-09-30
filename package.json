@@ -1,0 +1,79 @@
+{
+  "name": "shorts-studio",
+  "productName": "Shorts Studio",
+  "version": "0.1.0",
+  "description": "Turn your Twitch clips into vertical Shorts: captions, chat, zooms, sound effects, stickers, and a full editor.",
+  "author": "RottenAppleee",
+  "license": "MIT",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "tools": "node scripts/fetch-tools.cjs",
+    "dist": "node scripts/run-electron-node.cjs scripts/build.cjs",
+    "test:ui": "electron scripts/test-ui.cjs"
+  },
+  "devDependencies": {
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.shortsstudio.desktop",
+    "productName": "Shorts Studio",
+    "copyright": "Shorts Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json",
+      "engine/**",
+      "ui/**",
+      "themes/**",
+      "shared/**",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "resources/sounds",
+        "to": "sounds"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Shorts Studio",
+      "artifactName": "Shorts-Studio-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NikaDzotse/shorts-studio.git"
+  },
+  "homepage": "https://github.com/NikaDzotse/shorts-studio",
+  "bugs": {
+    "url": "https://github.com/NikaDzotse/shorts-studio/issues"
+  }
+}
