@@ -1,0 +1,12 @@
+{
+  "//": "Shorts Studio's own Google and TikTok apps (see docs/platform-setup.md). Google treats a desktop app's client secret as public; TikTok's secret stays on byttenapple.com.",
+  "youtube": {
+    "clientId": "",
+    "clientSecret": "",
+    "audited": false
+  },
+  "tiktok": {
+    "clientKey": "",
+    "audited": false
+  }
+}

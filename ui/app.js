@@ -73,13 +73,15 @@
     const status = s.status === "making" ? (s.step || "Making") + "..." : s.status === "queued" ? "Waiting..." : s.status === "ready" ? "Ready" : "Failed";
     const bust = s.updatedAt ? "?t=" + Date.parse(s.updatedAt) : "";
     return el("div", { class: "short" },
-      el("div", { class: "th", style: s.thumb && !working ? `background-image:url("${S.fileUrl(s.thumb)}${bust}")` : "", title: ready ? "Play" : "", onclick: () => ready && play(s) },
+      el("div", { class: "th", style: s.thumb && !working ? `background-image:url("${S.fileUrl(s.thumb)}${bust}")` : "", title: ready ? "Play, or drag it into an upload page" : "",
+        draggable: ready ? "true" : null, ondragstart: (e) => { e.preventDefault(); if (ready) S.startDrag(s.id); }, onclick: () => ready && play(s) },
         working ? el("div", { class: "spin", text: "◠" }) : null),
       el("div", { class: "body" },
         el("div", { class: "t", text: s.title || "Clip" }),
         el("div", { class: "m", text: [s.by && "clipped by " + s.by, s.seconds && Math.round(s.seconds) + " s", s.kind === "week" && s.clips && s.clips + " clips", s.chatNotes && s.chatNotes + " chat notes"].filter(Boolean).join(" · ") }),
         el("div", { class: "st " + s.status, text: status }),
         s.status === "failed" && s.error ? el("div", { class: "err", text: s.error }) : null,
+        postLine(s, "youtube"), postLine(s, "tiktok"),
         el("div", { class: "acts" },
           ready ? el("button", { text: "▶ Play", onclick: () => play(s) }) : null,
           ready && s.kind !== "week" ? el("button", { class: "primary", text: "✎ Edit", onclick: () => S.openEditor(s.id) }) : null,
@@ -90,22 +92,151 @@
   }
   function play(s) { const v = $("#player-video"); v.src = S.fileUrl(s.file) + "?t=" + Date.now(); $("#player").hidden = false; v.play().catch(() => {}); }
 
-  // ---------- the upload helper: copy the words, show the file, open the upload page ----------
-  function upload(s) {
-    const tags = settings.hashtags || "";
-    const tiktok = s.tiktokCaption || `${s.uploadTitle || s.title} ${tags}`.trim();
-    const box = (label, value, rows) => { const t = el("textarea", { rows: String(rows) }); t.value = value; return el("div", { class: "copybox" }, el("div", { class: "row" }, el("h3", { text: label }), el("span", { class: "grow" }), el("button", { text: "Copy", onclick: () => S.copy(t.value).then(() => toast("Copied")) })), t); };
+  // ---------- posting: status on a Short ----------
+  const when = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const PLAT = { youtube: "YouTube", tiktok: "TikTok" };
+  function postLine(s, p) {
+    const now = (s.posting || {})[p], done = (s.posts || {})[p];
+    if (now && now.error) return el("div", { class: "post bad", text: `${PLAT[p]}: ${now.error}` });
+    if (now) return el("div", { class: "post busy", text: `${PLAT[p]}: ${now.step || "Uploading"}${now.progress > 0 && now.progress < 1 ? " " + Math.round(now.progress * 100) + "%" : ""}` });
+    if (p === "tiktok" && s.tiktokPlan) return el("div", { class: "post plan", text: `TikTok: goes out ${when(s.tiktokPlan.at)} (keep Shorts Studio open)` });
+    if (!done) return null;
+    if (p === "youtube") return el("div", { class: "post ok" }, `YouTube ✓ ${done.publishAt ? "goes public " + when(done.publishAt) : done.privacy || "uploaded"} · `,
+      el("a", { href: "#", text: "open", onclick: (e) => { e.preventDefault(); S.openLink(done.url).catch(() => {}); } }));
+    return el("div", { class: "post ok", text: `TikTok ✓ ${done.status}${done.late ? ` (${done.late} min late: Shorts Studio was closed)` : ""}` });
+  }
+
+  // ---------- the upload dialog: drag the file, or post to YouTube and TikTok from here ----------
+  let upId = null, accounts = null, creator = null;
+  const PRIVACY = { PUBLIC_TO_EVERYONE: "Everyone", MUTUAL_FOLLOW_FRIENDS: "Friends", FOLLOWER_OF_CREATOR: "Followers", SELF_ONLY: "Only me" };
+  const hashtags = () => String(settings.hashtags || "").split(/\s+/).filter((t) => t.startsWith("#"));
+  async function upload(s) {
+    upId = s.id; creator = null;
+    accounts = await S.accounts().catch(() => null);
     $("#up-title").textContent = "Upload: " + (s.uploadTitle || s.title);
-    $("#upload-body").replaceChildren(
-      el("p", { class: "hint", text: "Copy the words, open the upload page, and drag the video in (Show the file opens its folder). The editor's Post tab changes these words." }),
-      el("div", { class: "row" }, el("button", { text: "📂 Show the file", onclick: () => S.reveal(s.file) }), el("span", { class: "grow" })),
-      el("h3", { text: "YouTube Shorts" }),
-      box("Title", s.uploadTitle || s.title || "", 2), box("Description", s.description || "", 5),
-      el("div", { class: "row" }, el("button", { class: "primary", text: "Open YouTube upload", onclick: () => S.openUpload("youtube") })),
-      el("h3", { text: "TikTok" }),
-      box("Caption", tiktok, 3),
-      el("div", { class: "row" }, el("button", { class: "primary", text: "Open TikTok upload", onclick: () => S.openUpload("tiktok") })));
+    renderUpload();
     $("#upload").hidden = false;
+  }
+  function updateUploadStatus() {
+    const s = shorts.find((x) => x.id === upId); if (!s) return;
+    for (const p of ["youtube", "tiktok"]) { const box = $("#" + p + "-status"); if (box) box.replaceChildren(postLine(s, p) || ""); }
+  }
+  // "Connect", "Posting as …", or why it can't
+  function accountLine(p, onChange) {
+    const a = (accounts || {})[p] || {};
+    if (!a.configured) return el("div", { class: "hint", text: `Posting straight to ${PLAT[p]} isn't set up in this copy of Shorts Studio yet. Drag the video into the upload page instead.` });
+    if (a.connected) return el("div", { class: "row acct" }, el("span", { class: "hint", text: `Posting as ${a.name || "your " + PLAT[p] + " account"}` }), el("span", { class: "grow" }),
+      el("button", { class: "ghost", text: "Disconnect", onclick: () => S.disconnect(p).then(async () => { accounts = await S.accounts(); onChange(); }) }));
+    const btn = el("button", { class: "primary", text: "Connect " + PLAT[p] });
+    const cancel = el("button", { class: "ghost", text: "Cancel", hidden: true, onclick: () => S.cancelConnect() });
+    btn.addEventListener("click", () => {
+      btn.disabled = true; btn.textContent = "Waiting for you in the browser..."; cancel.hidden = false;
+      S.connect(p).then(async (st) => { toast(`${PLAT[p]} connected${st.name ? " as " + st.name : ""}`); accounts = await S.accounts(); onChange(); })
+        .catch((e) => { if (e.message !== "Cancelled") toast(e.message, true); btn.disabled = false; btn.textContent = "Connect " + PLAT[p]; cancel.hidden = true; });
+    });
+    return el("div", { class: "row acct" }, btn, cancel, el("span", { class: "hint", text: "Opens your browser to sign in. Your sign-in stays on this PC." }));
+  }
+  function renderUpload() {
+    const s = shorts.find((x) => x.id === upId); if (!s) return;
+    const box = (label, value, rows) => { const t = el("textarea", { rows: String(rows) }); t.value = value; return { t, wrap: el("div", { class: "copybox" }, el("div", { class: "row" }, el("h3", { text: label }), el("span", { class: "grow" }), el("button", { text: "Copy", onclick: () => S.copy(t.value).then(() => toast("Copied")) })), t) }; };
+    const radios = (name, options, value) => { const wrap = el("div", { class: "radios" }); for (const [v, t] of options) { const r = el("input", { type: "radio", name, value: v }); r.checked = v === value; wrap.append(el("label", { class: "check" }, r, t)); } return wrap; };
+    const picked = (wrap) => (wrap.querySelector("input:checked") || {}).value;
+    const later = () => { const d = new Date(Date.now() + 2 * 3600000); d.setMinutes(0, 0, 0); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    const tile = el("div", { class: "dragtile", draggable: "true", title: "Drag into YouTube's or TikTok's upload page", ondragstart: (e) => { e.preventDefault(); S.startDrag(s.id); } },
+      el("div", { class: "dt-th", title: "Watch it", style: s.thumb ? `background-image:url("${S.fileUrl(s.thumb)}")` : "", onclick: () => play(s) }),
+      el("div", {}, el("b", { text: "Drag this into the upload page" }), el("div", { class: "hint", text: "Or post it straight from here. Click the picture to watch it first." })), el("span", { class: "grow" }),
+      el("button", { class: "ghost", text: "📂 Show the file", onclick: () => S.reveal(s.file) }));
+
+    // --- YouTube ---
+    const yt = (accounts || {}).youtube || {};
+    const title = box("Title", s.uploadTitle || s.title || "", 2), desc = box("Description", s.description || "", 4);
+    const vis = radios("yt-vis", [["public", "Public"], ["unlisted", "Unlisted"], ["private", "Private"], ["schedule", "Schedule"]], "public");
+    const ytAt = el("input", { type: "datetime-local", value: later(), hidden: true });
+    vis.addEventListener("change", () => (ytAt.hidden = picked(vis) !== "schedule"));
+    const kids = radios("yt-kids", [["no", "No, it's not made for kids"], ["yes", "Yes, it's made for kids"]], null);
+    const synth = el("input", { type: "checkbox" });
+    const ytGo = el("button", { class: "primary", text: "⬆ Upload to YouTube", onclick: () => {
+      const v = picked(vis), opts = { title: title.t.value.trim(), description: desc.t.value, tags: hashtags(), privacy: v === "schedule" ? "private" : v, kids: picked(kids) === "yes", synthetic: synth.checked };
+      if (!opts.title) return toast("Give it a title", true);
+      if (!picked(kids)) return toast("Say whether it's made for kids (YouTube asks for every video)", true);
+      if (v === "schedule") { const at = new Date(ytAt.value); if (!(at > Date.now() + 5 * 60000)) return toast("Pick a time at least 5 minutes from now", true); opts.publishAt = at.toISOString(); }
+      if (s.posts && s.posts.youtube && !confirm("This Short is already on YouTube. Upload it again?")) return;
+      S.post(s.id, "youtube", opts).then(() => toast("Uploading to YouTube")).catch((e) => toast(e.message, true));
+    } });
+    const ytSection = el("div", { class: "platform" },
+      el("div", { class: "row" }, el("h3", { text: "YouTube Shorts" })),
+      accountLine("youtube", renderUpload), title.wrap, desc.wrap,
+      yt.connected ? el("div", { class: "opts" }, el("span", { class: "hint", text: "Who sees it" }), vis, ytAt,
+        el("span", { class: "hint", text: "Audience (YouTube asks everyone)" }), kids,
+        el("label", { class: "check" }, synth, "It has realistic altered or AI-made content")) : null,
+      yt.configured && !yt.audited ? el("div", { class: "hint warn", text: "Until YouTube approves Shorts Studio, uploads from here stay private (YouTube's rule for new apps)." }) : null,
+      el("div", { class: "row" }, yt.connected ? ytGo : null,
+        el("button", { text: "Open YouTube upload", title: "Copies the title, then opens YouTube Studio", onclick: () => S.copy(title.t.value).then(() => S.openUpload("youtube")).then(() => toast("Title copied: paste it on YouTube")) })),
+      el("div", { id: "youtube-status" }));
+
+    // --- TikTok ---
+    const tt = (accounts || {}).tiktok || {};
+    const caption = box("Caption", s.tiktokCaption || `${s.uploadTitle || s.title} ${settings.hashtags || ""}`.trim(), 3);
+    const mode = radios("tt-mode", [["draft", "Send to my TikTok drafts (finish in the app)"], ["post", "Post now"], ["schedule", "Schedule"]], "draft");
+    const ttAt = el("input", { type: "datetime-local", value: later(), hidden: true });
+    const req = el("div", { class: "ttreq" });   // what TikTok asks for before a direct post
+    const choice = { privacy: "", comment: false, duet: false, stitch: false, disclose: false, own: false, branded: false };
+    const drawReq = () => {
+      if (picked(mode) === "draft" || !tt.connected) { req.replaceChildren(); return; }
+      if (!creator) { req.replaceChildren(el("span", { class: "hint", text: "Asking TikTok about your account..." }));
+        S.tiktokCreator().then((c) => { creator = c; drawReq(); }).catch((e) => req.replaceChildren(el("div", { class: "hint warn", text: e.message }))); return; }
+      const c = creator, tooLong = c.max_video_post_duration_sec && s.seconds > c.max_video_post_duration_sec;
+      const who = el("select", {}, el("option", { value: "", text: "Choose who can see it...", disabled: true, selected: !choice.privacy }),
+        ...(c.privacy_level_options || []).map((o) => el("option", { value: o, text: PRIVACY[o] || o, selected: choice.privacy === o, disabled: choice.branded && o === "SELF_ONLY" })));
+      who.addEventListener("change", () => { choice.privacy = who.value; });
+      const tog = (key, label, off) => { const i = el("input", { type: "checkbox" }); i.checked = !off && choice[key]; i.disabled = !!off; i.addEventListener("change", () => { choice[key] = i.checked; }); return el("label", { class: "check" + (off ? " off" : "") }, i, label + (off ? " (off in your TikTok settings)" : "")); };
+      const disclose = el("input", { type: "checkbox" }); disclose.checked = choice.disclose;
+      disclose.addEventListener("change", () => { choice.disclose = disclose.checked; if (!disclose.checked) { choice.own = choice.branded = false; } drawReq(); });
+      const own = el("input", { type: "checkbox" }); own.checked = choice.own; own.addEventListener("change", () => { choice.own = own.checked; drawReq(); });
+      const branded = el("input", { type: "checkbox" }); branded.checked = choice.branded;
+      branded.addEventListener("change", () => { choice.branded = branded.checked; if (choice.branded && choice.privacy === "SELF_ONLY") choice.privacy = ""; drawReq(); });
+      req.replaceChildren(...[
+        el("div", { class: "row" }, el("b", { text: "Posting to " + (c.creator_nickname || c.creator_username || "your TikTok") })),
+        tooLong ? el("div", { class: "hint warn", text: `TikTok lets this account post videos up to ${c.max_video_post_duration_sec} s; this one is ${Math.round(s.seconds)} s.` }) : null,
+        el("label", { class: "field" }, "Who can see it", who),
+        el("div", { class: "row" }, el("span", { class: "hint", text: "Let people:" }), tog("comment", "Comment", c.comment_disabled), tog("duet", "Duet", c.duet_disabled), tog("stitch", "Stitch", c.stitch_disabled)),
+        el("label", { class: "check" }, disclose, "This is commercial content (promotes a brand, product or service)"),
+        choice.disclose ? el("div", { class: "indent" },
+          el("label", { class: "check" }, own, "Your brand: you're promoting yourself or your own business"),
+          el("label", { class: "check" }, branded, "Branded content: you're promoting someone else in exchange for something"),
+          el("div", { class: "hint", text: choice.branded ? "It will be labelled \"Paid partnership\"." : choice.own ? "It will be labelled \"Promotional content\"." : "Pick at least one." })) : null,
+        el("div", { class: "hint" }, "By posting, you agree to TikTok's ", el("a", { href: "#", text: "Music Usage Confirmation", onclick: (e) => { e.preventDefault(); S.openLink("https://www.tiktok.com/legal/page/global/music-usage-confirmation/en").catch(() => {}); } }),
+          choice.branded ? el("span", {}, " and ", el("a", { href: "#", text: "Branded Content Policy", onclick: (e) => { e.preventDefault(); S.openLink("https://www.tiktok.com/legal/page/global/bc-policy/en").catch(() => {}); } })) : null, ".")].filter(Boolean));
+    };
+    mode.addEventListener("change", () => { ttAt.hidden = picked(mode) !== "schedule"; ttGo.textContent = ({ draft: "⬆ Send to TikTok drafts", post: "⬆ Post to TikTok", schedule: "🕒 Schedule on TikTok" })[picked(mode)]; drawReq(); });
+    const ttGo = el("button", { class: "primary", text: "⬆ Send to TikTok drafts", onclick: () => {
+      const m = picked(mode), text = caption.t.value.trim();
+      if (m === "draft") return S.post(s.id, "tiktok", { mode: "draft" }).then(() => toast("Sending to your TikTok drafts")).catch((e) => toast(e.message, true));
+      if (!creator) return toast("Wait a moment: TikTok is still answering", true);
+      if (!choice.privacy) return toast("Choose who can see it", true);
+      if (choice.disclose && !choice.own && !choice.branded) return toast("Say whether it promotes your brand or someone else's", true);
+      if (creator.max_video_post_duration_sec && s.seconds > creator.max_video_post_duration_sec) return toast("This Short is too long for this TikTok account", true);
+      const opts = { mode: "post", caption: text, privacy: choice.privacy, allowComment: choice.comment && !creator.comment_disabled, allowDuet: choice.duet && !creator.duet_disabled,
+        allowStitch: choice.stitch && !creator.stitch_disabled, brandOrganic: choice.disclose && choice.own, brandContent: choice.disclose && choice.branded };
+      if (m === "schedule") {
+        const at = new Date(ttAt.value);
+        if (!(at > Date.now() + 60000)) return toast("Pick a time in the future", true);
+        return S.scheduleTikTok(s.id, at.toISOString(), opts).then(() => toast("Scheduled. Keep Shorts Studio open then (or it goes out when you next open it).")).catch((e) => toast(e.message, true));
+      }
+      if (s.posts && s.posts.tiktok && !confirm("This Short already went to TikTok. Send it again?")) return;
+      S.post(s.id, "tiktok", opts).then(() => toast("Posting to TikTok. It can take a few minutes to show up.")).catch((e) => toast(e.message, true));
+    } });
+    const ttSection = el("div", { class: "platform" },
+      el("div", { class: "row" }, el("h3", { text: "TikTok" })),
+      accountLine("tiktok", renderUpload), caption.wrap,
+      tt.connected ? el("div", { class: "opts" }, mode, ttAt, req) : null,
+      tt.connected && s.tiktokPlan ? el("div", { class: "row" }, el("span", { class: "hint", text: "Scheduled for " + when(s.tiktokPlan.at) }), el("button", { class: "ghost", text: "Cancel the schedule", onclick: () => S.unscheduleTikTok(s.id).then(() => toast("Schedule cancelled")) })) : null,
+      tt.configured && !tt.audited ? el("div", { class: "hint warn", text: "Until TikTok approves Shorts Studio, posting straight to your profile only works for private accounts and stays private. Sending to your drafts works." }) : null,
+      el("div", { class: "row" }, tt.connected ? ttGo : null,
+        el("button", { text: "Open TikTok upload", title: "Copies the caption, then opens TikTok's upload page", onclick: () => S.copy(caption.t.value).then(() => S.openUpload("tiktok")).then(() => toast("Caption copied: paste it on TikTok")) })),
+      el("div", { id: "tiktok-status" }));
+    $("#upload-body").replaceChildren(tile, ytSection, ttSection);
+    updateUploadStatus();
   }
 
   // ---------- themes (little live previews of each frame) ----------
@@ -172,6 +303,14 @@
     const outDir = el("span", { class: "hint", text: s.outDir || "Videos\\Shorts Studio" });
     const drawThemes = () => themeCards(themesBox, settings.theme, (id) => save({ theme: id, accent: "" }).then(() => { accent.value = (themes.find((t) => t.id === id) || {}).accent || "#ef443b"; drawThemes(); }));
     const themesBox = el("div", { class: "themes" });
+    const postingSec = el("div", { class: "sec" });
+    const drawPosting = async () => {
+      accounts = await S.accounts().catch(() => null);
+      postingSec.replaceChildren(el("h3", { text: "Posting" }),
+        el("b", { text: "YouTube" }), accountLine("youtube", drawPosting), el("b", { text: "TikTok" }), accountLine("tiktok", drawPosting),
+        el("span", { class: "hint", text: "Shorts Studio only posts when you press Upload, or at a time you schedule." }));
+    };
+    drawPosting();
     $("#settings-body").replaceChildren(
       el("div", { class: "sec full" }, el("h3", { text: "Look" }), themesBox,
         el("div", { class: "row" }, el("span", { class: "hint", text: "Colour" }), accent, el("button", { class: "ghost", text: "Theme's colour", onclick: () => save({ accent: "" }).then(() => { accent.value = (themes.find((t) => t.id === settings.theme) || {}).accent; drawThemes(); }) }))),
@@ -189,6 +328,7 @@
       el("div", { class: "sec" }, el("h3", { text: "OBS scenes (optional)" }),
         el("label", { class: "check" }, obsOn, "Pick the layout from the OBS scene that was live"),
         el("span", { class: "hint", text: "Only when OBS runs on this PC: it reads OBS's own log files." }), obsMap),
+      postingSec,
       el("div", { class: "sec" }, el("h3", { text: "Library and files" }),
         el("div", { class: "row" }, el("button", { text: "Sound effects folder", onclick: () => S.openFolder("sfx") }), el("button", { text: "Music folder", onclick: () => S.openFolder("music") }), el("button", { text: "Pictures folder", onclick: () => S.openFolder("stickers") })),
         el("span", { class: "hint", text: "Drop your own sounds, royalty-free music or pictures in there; the editor's library shows them." }),
@@ -207,7 +347,7 @@
     S.onPresets((items) => { presets = items; renderPresets(); });
     $("#batch-preset").addEventListener("change", () => S.saveSettings({ presetId: $("#batch-preset").value }).catch((e) => toast(e.message, true)));
     if (settings.firstRun || !settings.channel) welcome(); else loadClips();
-    S.onShorts(async () => { shorts = await S.shorts(); renderShorts(); if (clips.length) renderClips(); });
+    S.onShorts(async () => { shorts = await S.shorts(); renderShorts(); if (clips.length) renderClips(); if (!$("#upload").hidden) updateUploadStatus(); });
     S.onSettings((s) => { const ch = s.channel !== settings.channel; settings = s; applyAccent(); renderPresets(); if (ch) loadClips(); });
     for (const b of document.querySelectorAll("#range button")) b.addEventListener("click", () => { range = b.dataset.r; for (const x of document.querySelectorAll("#range button")) x.classList.toggle("on", x === b); picked.clear(); loadClips(); });
     $("#reload").addEventListener("click", loadClips);

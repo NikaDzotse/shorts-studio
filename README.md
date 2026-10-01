@@ -4,7 +4,7 @@ Turns your Twitch clips into vertical Shorts for YouTube and TikTok: trimmed to 
 on screen, and a look you pick. There's a full editor for when you want to change things. Everything runs on your own
 PC. You don't need a Twitch login, API keys or an account anywhere.
 
-**[⬇ Download for Windows](https://github.com/NikaDzotse/shorts-studio/releases/latest)**
+**[⬇ Download for Windows](https://github.com/NikaDzotse/shorts-studio/releases/latest/download/Shorts-Studio-Setup.exe)** · [What it does, screenshots and help](https://byttenapple.com/assets/shorts-studio)
 
 ![Three Shorts made with Shorts Studio playing side by side](docs/demo.gif)
 
@@ -105,13 +105,24 @@ To change a saved preset or its name, select it, edit the name/look, and press *
 the preset without changing finished or queued Shorts. Presets are saved in `%APPDATA%\Shorts Studio\presets.json`.
 Music files stay in your library; if one is moved or deleted, choose a replacement and update the preset.
 
-## Uploading
+## Posting
 
-Press **⬆ Upload** on a Short. It shows the title, description and TikTok caption with copy buttons, and opens the
-YouTube or TikTok upload page. Drag the video file in and paste the words. Shorts Studio never logs into your
-accounts.
+Press **⬆ Upload** on a Short.
 
-<img src="docs/upload.png" alt="The upload helper: title, description and TikTok caption with Copy buttons" width="700">
+- **Drag it in:** drag the Short (from the upload window, or straight from its picture in your list) onto YouTube's
+  or TikTok's upload page. **Open YouTube upload** / **Open TikTok upload** copy the title or caption first, so you
+  just paste.
+- **YouTube:** connect your channel once (Settings → Posting, or right in the upload window), then upload as public,
+  unlisted or private, or **schedule** it. YouTube publishes it at that time even if your PC is off.
+- **TikTok:** connect once, then **send it to your TikTok drafts** and post from your phone, **post now**, or
+  **schedule** it. Shorts Studio has to be open at the scheduled time; if it isn't, the post goes out the next time
+  you open it. TikTok asks you to choose who can see it, comments/duet/stitch, and whether it's commercial content.
+
+Each Short shows how its posts went (uploading, done with a link, scheduled, or what went wrong). Your sign-in stays
+on your PC, encrypted. Posting straight from the app is new: until YouTube and TikTok approve Shorts Studio, YouTube
+keeps its uploads private and TikTok only allows drafts and private posts.
+
+<img src="docs/upload.png" alt="The upload window: YouTube visibility, audience and schedule; TikTok drafts, post now or schedule, with who can see it, comments, duet, stitch and commercial content" width="700">
 
 ## Where things are
 
@@ -134,6 +145,7 @@ Shorts Studio uses these, all included in the installer:
 Sounds: see `resources\sounds\CREDITS.txt` in the install folder. They're either made for the app or CC0.
 
 Twitch, YouTube and TikTok are trademarks of their owners. Shorts Studio isn't made by or connected to any of them.
+See the [privacy policy](https://byttenapple.com/assets/shorts-studio/privacy) and [terms](https://byttenapple.com/assets/shorts-studio/terms).
 
 ---
 
@@ -155,6 +167,8 @@ npm run dist             # dist\Shorts-Studio-Setup-<version>.exe
     screenshots.
   - `node scripts/run-electron-node.cjs scripts/test-packaged.cjs <shots dir>` does the same with the built app in
     `dist\win-unpacked`.
+  - `electron scripts/test-publish.cjs` tests posting against stand-in YouTube/TikTok servers; `electron scripts/test-posting-ui.cjs <shots dir>` clicks through the Upload window.
+- Posting needs Shorts Studio's own Google and TikTok apps: see [docs/platform-setup.md](docs/platform-setup.md).
 
 Code layout:
 

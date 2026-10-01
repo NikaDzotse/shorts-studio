@@ -106,3 +106,29 @@ main#home { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax
 #toast.show { opacity: 1; transform: translateX(-50%); }
 #toast.bad { border-color: #ff8a82; color: #ff8a82; }
 @media (max-width: 1050px) { main#home { grid-template-columns: 1fr; overflow-y: auto; } .card { min-height: 420px; } .settings { grid-template-columns: 1fr; } }
+
+/* posting */
+.post { font-size: 12px; }
+.post.ok { color: var(--green); } .post.busy, .post.plan { color: var(--amber); } .post.bad { color: #ff8a82; }
+.post a { color: inherit; }
+#upload .dialog { width: min(760px, 100%); }
+.dragtile .dt-th { cursor: pointer; }
+.short .th[draggable="true"] { cursor: grab; }
+.dragtile { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel2); cursor: grab; }
+.dragtile:hover { border-color: var(--accent); }
+.dragtile .dt-th { width: 45px; height: 80px; border-radius: 6px; background: #000 center/cover no-repeat; flex: none; }
+.platform { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.platform .opts { display: flex; flex-direction: column; gap: 6px; }
+.platform .radios { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.platform .acct { gap: 10px; }
+.platform input[type=datetime-local] { width: auto; }
+.hint.warn { color: var(--amber); }
+.ttreq { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: var(--panel2); }
+.ttreq:empty { display: none; }
+.ttreq .indent { padding-left: 24px; display: flex; flex-direction: column; gap: 4px; }
+.ttreq a, .hint a { color: var(--blue); }
+label.check.off { opacity: .55; }
+#youtube-status, #tiktok-status { font-size: 13px; }
+input[type=radio] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); flex: none; }
+label.check { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: 13px; cursor: pointer; }
+.platform .opts > .hint { margin-top: 4px; }

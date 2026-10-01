@@ -6,7 +6,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 const call = (name) => async (...args) => { const r = await ipcRenderer.invoke("studio:" + name, ...args); if (!r.ok) throw new Error(r.error); return r.value; };
 const NAMES = ["settings", "saveSettings", "themes", "clips", "make", "bestOf", "shorts", "editData", "saveEdit", "remake", "remove", "reveal", "openFolder",
   "openUpload", "openLink", "copy", "openEditor", "library", "model", "downloadModel", "obs", "emotes", "chooseFolder", "version", "busy",
-  "presets", "savePreset", "deletePreset", "presetStyle", "draft", "saveDraft", "dropDraft"];
+  "presets", "savePreset", "deletePreset", "presetStyle", "draft", "saveDraft", "dropDraft",
+  "accounts", "connect", "cancelConnect", "disconnect", "tiktokCreator", "post", "scheduleTikTok", "unscheduleTikTok"];
 const api = Object.fromEntries(NAMES.map((n) => [n, call(n)]));
 const on = (ch) => (cb) => { const f = (e, data) => cb(data); ipcRenderer.on(ch, f); return () => ipcRenderer.removeListener(ch, f); };
 api.onShorts = on("studio:shorts");
@@ -15,4 +16,6 @@ api.onModel = on("studio:model");
 api.onPresets = on("studio:presets");
 // turns a file path into a URL the page can show (file:///C:/...)
 api.fileUrl = (p) => p ? "file:///" + String(p).replace(/\\/g, "/").split("/").map((x, i) => i === 0 ? x : encodeURIComponent(x)).join("/") : "";
+// a finished Short dragged out of the window (into an upload page); sent while the drag starts
+api.startDrag = (id) => ipcRenderer.send("studio:drag", id);
 contextBridge.exposeInMainWorld("studio", api);

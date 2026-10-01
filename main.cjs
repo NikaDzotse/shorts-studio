@@ -1,7 +1,7 @@
 "use strict";
 // Shorts Studio: the app. Opens the main window (your clips and Shorts) and editor windows, and answers them through
 // the preload bridge (window.studio). The work happens in engine\.
-const { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, clipboard, dialog, Menu, screen, nativeImage } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -16,6 +16,8 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
 const P = require("./engine/paths.cjs");
 const S = require("./engine/store.cjs");
 const Presets = require("./engine/presets.cjs");
+const PUB = require("./engine/publish.cjs");
+const POST = require("./engine/posting.cjs");
 const M = require("./engine/make.cjs");
 const T = require("./engine/twitch.cjs");
 const Wh = require("./engine/whisper.cjs");
@@ -148,9 +150,29 @@ handle("chooseFolder", async () => { const r = await dialog.showOpenDialog(main,
 handle("version", () => app.getVersion());
 handle("busy", () => M.busy());
 
+// ---------- posting to YouTube and TikTok ----------
+handle("accounts", () => PUB.status());
+handle("connect", (platform) => platform === "youtube" ? PUB.connectYouTube() : platform === "tiktok" ? PUB.connectTikTok() : Promise.reject(new Error("Unknown platform")));
+handle("cancelConnect", () => { PUB.cancelSignIn(); return true; });
+handle("disconnect", (platform) => PUB.disconnect(platform));
+handle("tiktokCreator", () => PUB.tiktokCreator());
+handle("post", (id, platform, opts) => POST.start(id, platform, opts || {}));
+handle("scheduleTikTok", (id, at, opts) => POST.schedule(id, at, opts || {}));
+handle("unscheduleTikTok", (id) => POST.unschedule(id));
+// Dragging a finished Short out of the window, straight into an upload page (only the Shorts' own files)
+ipcMain.on("studio:drag", (e, id) => {
+  const s = S.get(id);
+  if (!s || !s.file || !fs.existsSync(s.file)) return;
+  let icon = s.thumb && fs.existsSync(s.thumb) ? nativeImage.createFromPath(s.thumb) : nativeImage.createEmpty();
+  if (icon.isEmpty() && fs.existsSync(ICON)) icon = nativeImage.createFromPath(ICON);
+  if (!icon.isEmpty()) icon = icon.resize({ height: 96 });
+  e.sender.startDrag({ file: s.file, icon });
+});
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createMain();
+  POST.startScheduler();
   app.on("activate", () => { if (!main) createMain(); });
 });
 app.on("window-all-closed", () => app.quit());

@@ -1,7 +1,7 @@
 {
   "name": "shorts-studio",
   "productName": "Shorts Studio",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Turn your Twitch clips into vertical Shorts: captions, chat, zooms, sound effects, stickers, and a full editor.",
   "author": "RottenAppleee",
   "license": "MIT",
@@ -44,6 +44,10 @@
       {
         "from": "resources/sounds",
         "to": "sounds"
+      },
+      {
+        "from": "resources/platforms.json",
+        "to": "platforms.json"
       }
     ],
     "asar": true,
